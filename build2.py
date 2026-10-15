@@ -101,6 +101,29 @@ def resolve_geo(g):
     except Exception as e: print('geo fail',nm,e)
     GEO_CACHE[(nm,typ)]=out; print('geo',nm,typ,'->',out[0] if out else None); return out
 SH=[1.9,1.0,0.55,1.3,0.45,2.2,1.0,0.6]
+# planner coordinate sanity: drop labels far from the topic's centre of mass
+try:
+    import statistics as _st
+    _cx=[];_cy=[]
+    for _s in sc['scenes']:
+        for _n in (_s.get('countries') or [])[:4]:
+            _f=find(W110,_n) if isinstance(_n,str) else None
+            if _f:
+                _b=mainbbox(_f); _cx.append((_b[0]+_b[2])/2); _cy.append((_b[1]+_b[3])/2)
+        for _l in (_s.get('labels') or []):
+            try: _cx.append(float(_l['lon'])); _cy.append(float(_l['lat']))
+            except Exception: pass
+    if len(_cx)>=4:
+        _mx,_my=_st.median(_cx),_st.median(_cy)
+        for _s in sc['scenes']:
+            _keep=[]
+            for _l in (_s.get('labels') or []):
+                try: ok=math.hypot(float(_l['lon'])-_mx,float(_l['lat'])-_my)<=45
+                except Exception: ok=True
+                if ok: _keep.append(_l)
+                else: print('label dropped far from topic centre',_l.get('text'))
+            _s['labels']=_keep
+except Exception as _e: print('centre guard fail',_e)
 cams=[];hls=[];GEOS=[];_last=None;_dflt=False
 for i,s in enumerate(sc['scenes']):
     names=[n for n in (s.get('countries') or []) if isinstance(n,str)][:4]
