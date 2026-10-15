@@ -115,6 +115,21 @@ for i,s in enumerate(sc['scenes']):
             try:
                 if isinstance(lb,dict) and -180<=float(lb['lon'])<=180 and -90<=float(lb['lat'])<=90: pts+=[(float(lb['lon'])-3,float(lb['lat'])-2),(float(lb['lon'])+3,float(lb['lat'])+2)]; lblframe=True
             except Exception: pass
+    if lblframe and not geos:   # pin-only scene: tint the admin-1 unit that contains the pin so the place has real map context
+        try:
+            from shapely.geometry import Point as _P
+            _lb=[l for l in (s.get('labels') or []) if isinstance(l,dict) and isinstance(l.get('lon'),(int,float)) and isinstance(l.get('lat'),(int,float))][:1]
+            if _lb:
+                _pt=_P(float(_lb[0]['lon']),float(_lb[0]['lat']))
+                for _f in ADM1:
+                    _g=_f['geometry']
+                    if not _g: continue
+                    _sg=shape(_g)
+                    if _sg.bounds[0]<=_pt.x<=_sg.bounds[2] and _sg.bounds[1]<=_pt.y<=_sg.bounds[3] and _sg.buffer(0).contains(_pt):
+                        _b=_sg.bounds
+                        if max(_b[2]-_b[0],_b[3]-_b[1])<=6: geos=[({'name':'auto','auto':True},('poly',_sg.buffer(0)))]
+                        break
+        except Exception as _e: print('auto region fail',_e)
     fo=s.get('focus'); fok=None
     try:
         if fo and len(fo)==3: fok=(float(fo[0]),float(fo[1]),max(4,min(200,float(fo[2]))))
@@ -300,7 +315,7 @@ for i,s in enumerate(sc['scenes']):
         _m=re.search(r'id="gp%d_%d" class="(\w+)"'%(i,k),svg)
         if not _m: continue
         if _m.group(1)=='rv': html+=f'tl.fromTo("#gp{i}_{k}",{{opacity:1,strokeDasharray:"0 1"}},{{strokeDasharray:"1 0",duration:{min(2.5,d):.2f},ease:"none"}},{t0+.2:.2f}).to("#gp{i}_{k}",{{opacity:0,duration:.25}},{t0+d+GAP-.1:.2f});\n'
-        else: html+=f'tl.to("#gp{i}_{k}",{{opacity:1,duration:.4}},{t0:.2f}).to("#gp{i}_{k}",{{opacity:0,duration:.25}},{t0+d+GAP-.1:.2f});\n'
+        else: html+=f'tl.to("#gp{i}_{k}",{{opacity:{0.45 if GEOS[i][k][0].get("auto") else 1},duration:.4}},{t0:.2f}).to("#gp{i}_{k}",{{opacity:0,duration:.25}},{t0+d+GAP-.1:.2f});\n'
     html+=f'tl.to("#cap{i}",{{opacity:1,duration:.15}},{t0:.2f}).to("#cap{i}",{{opacity:0,duration:.1}},{t0+d+GAP-0.2:.2f});\n'
     nw=len(s['vo'].split())
     for j in range(nw): html+=f'tl.set("#w{i}_{j}",{{className:"on"}},{t0+d*j/nw:.2f});tl.set("#w{i}_{j}",{{className:""}},{t0+d*(j+1)/nw:.2f});\n'
