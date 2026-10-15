@@ -14,8 +14,10 @@ for i,s in enumerate(sc['scenes']):
     v,p=VOICES[s['spk']]; f=f'{OUT}/assets/s{i}.mp3'
     import re as _r2
     clean=_r2.sub(r'[^\u0600-\u06FF\s.,!?؟،:؛-]','',s['vo']).strip()
-    for _t in range(5):
+    for _t in range(9):
+        if _t: __import__('time').sleep(min(12,2*_t))
         vv,pp,tx=v,p,s['vo']
+        if _t>=7: vv='ar-EG-ShakirNeural'
         if _t>=2: pp='+0Hz'
         if _t>=3: tx=clean
         r=subprocess.run(['python3','-m','edge_tts','--voice',vv]+([] if pp=='+0Hz' else ['--pitch='+pp])+['--text',tx,'--write-media',f],capture_output=True,timeout=60)
