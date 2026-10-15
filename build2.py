@@ -103,6 +103,19 @@ for i,s in enumerate(sc['scenes']):
     pts=[]
     geos=[(g,resolve_geo(g)) for g in (s.get('geo') or []) if isinstance(g,dict)][:3]
     geos=[(g,r) for g,r in geos if r]
+    _ctx=[]
+    for f in fs:
+        _b=mainbbox(f); _ctx.append((_b[0]-8,_b[1]-8,_b[2]+8,_b[3]+8))
+    for _lb in (s.get('labels') or []):
+        try: _ctx.append((float(_lb['lon'])-12,float(_lb['lat'])-12,float(_lb['lon'])+12,float(_lb['lat'])+12))
+        except Exception: pass
+    if _ctx:
+        def _near(r):
+            c=r[1].centroid
+            return any(a[0]<=c.x<=a[2] and a[1]<=c.y<=a[3] for a in _ctx)
+        _kept=[(g,r) for g,r in geos if _near(r)]
+        if len(_kept)<len(geos): print('geo rejected far from scene context',[g.get('name') for g,r in geos if (g,r) not in _kept])
+        geos=_kept
     for g,r in geos:
         b=r[1].bounds; pts+=[(b[0],b[1]),(b[2],b[3])]
     for f in fs:
