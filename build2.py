@@ -69,12 +69,41 @@ def mainbbox(f):
     ps=[p for p in ps if p.bounds[0]>-170 or all(q.bounds[0]<-170 for q in ps)] or ps
     mx_=max(p.envelope.area for p in ps); keep=[p for p in ps if p.envelope.area>=0.05*mx_]
     b=unary_union(keep).bounds; return b
+GEO_CACHE={}
+def _rj(p):
+    return json.load(open(H+'/'+p))['features'] if os.path.exists(H+'/'+p) else []
+RIV=_rj('rivers10.json'); ADM1=_rj('admin1.json')
+def _pk(p,*ks): return {key(p.get(k)) for k in ks if p.get(k)}
+def resolve_geo(g):
+    nm=str(g.get('name','')); typ=str(g.get('type','region')).lower(); k=key(nm)
+    if not k: return None
+    if (nm,typ) in GEO_CACHE: return GEO_CACHE[(nm,typ)]
+    out=None
+    try:
+        if typ=='river':
+            gs=[shape(f['geometry']) for f in RIV if k in _pk(f['properties'],'name','name_en')]
+            if gs: out=('line',unary_union(gs))
+        elif typ=='region':
+            gs=[shape(f['geometry']).buffer(0) for f in ADM1 if k in _pk(f['properties'],'name','name_en','woe_name')]
+            if gs: out=('poly',unary_union(gs))
+        if out is None and typ in ('region','river'):
+            import urllib.request,urllib.parse
+            u='https://nominatim.openstreetmap.org/search?format=json&limit=1&polygon_geojson=1&polygon_threshold=0.01&q='+urllib.parse.quote(nm)
+            r=json.load(urllib.request.urlopen(urllib.request.Request(u,headers={'User-Agent':'atlas-render-worker/1.0'}),timeout=30))
+            if r and r[0].get('geojson',{}).get('type') in ('Polygon','MultiPolygon','LineString','MultiLineString'):
+                gg=shape(r[0]['geojson']); out=('poly',gg.buffer(0)) if gg.geom_type in ('Polygon','MultiPolygon') else ('line',gg)
+    except Exception as e: print('geo fail',nm,e)
+    GEO_CACHE[(nm,typ)]=out; print('geo',nm,typ,'->',out[0] if out else None); return out
 SH=[1.9,1.0,0.55,1.3,0.45,2.2,1.0,0.6]
-cams=[];hls=[]
+cams=[];hls=[];GEOS=[]
 for i,s in enumerate(sc['scenes']):
     names=[n for n in (s.get('countries') or []) if isinstance(n,str)][:4]
     fs=[f for f in (find(W110,n) for n in names) if f]
     pts=[]
+    geos=[(g,resolve_geo(g)) for g in (s.get('geo') or []) if isinstance(g,dict)][:3]
+    geos=[(g,r) for g,r in geos if r]
+    for g,r in geos:
+        b=r[1].bounds; pts+=[(b[0],b[1]),(b[2],b[3])]
     for f in fs:
         b=mainbbox(f); pts+=[(b[0],b[1]),(b[2],b[3])]
     for a in s.get('arrows') or []:
@@ -88,22 +117,37 @@ for i,s in enumerate(sc['scenes']):
         x0=min(p[0] for p in pts);x1=max(p[0] for p in pts);y0=min(p[1] for p in pts);y1=max(p[1] for p in pts)
         cx,cy=(x0+x1)/2,(y0+y1)/2; span=max((x1-x0)*1.5,(y1-y0)*1.5*AR,6)
         mg=0.25*max(x1-x0,(y1-y0))
-        if fok and x0-mg<=fok[0]<=x1+mg and y0-mg<=fok[1]<=y1+mg: cx,cy,span=fok   # a close-up the planner asked for, inside the shown area
+        if geos: span=max((x1-x0)*1.6,(y1-y0)*1.6*AR,5)
+        elif fok and x0-mg<=fok[0]<=x1+mg and y0-mg<=fok[1]<=y1+mg: cx,cy,span=fok   # a close-up the planner asked for, inside the shown area
         else: span*=SH[i%len(SH)]
+        if geos: span=max((x1-x0)*1.6,(y1-y0)*1.6*AR,5)
     elif fok: cx,cy,span=fok
     else: cx,cy,span=10,20,140
     span=max(5,min(160,span))
     vis=span/AR; cy=max(-90+vis/2,min(90-vis/2,cy)) if vis<180 else 15
-    if not fs:
+    if not fs and not geos and not s.get('nocountry'):
         from shapely.geometry import Point
         pt=Point(cx,cy)
         for f in W110:
             try:
                 if shape(f['geometry']).buffer(0).contains(pt): fs=[f]; names=[f['properties']['ADMIN']]; break
             except Exception: pass
-    cams.append((cx,cy,span)); hls.append((names,fs))
+    cams.append((cx,cy,span)); hls.append((names,fs)); GEOS.append(geos)
 narrow=[c for c in cams if c[2]<=45]
 paths_d=''
+def gpath(geom,epsv):
+    if geom.is_empty: return ''
+    g=geom.simplify(epsv,preserve_topology=False)
+    stack=[g]; o=[]
+    while stack:
+        q=stack.pop()
+        if q.is_empty: continue
+        if hasattr(q,'geoms'): stack+=list(q.geoms); continue
+        if q.geom_type!='Polygon': continue
+        for r in [q.exterior]+list(q.interiors):
+            c=list(r.coords)
+            if len(c)>2: o.append('M'+' L'.join('%.1f,%.1f'%(X(x),Y(y)) for x,y in c)+'Z')
+    return ' '.join(o)
 if narrow:
     boxes=[box(c[0]-c[2]*0.8,c[1]-c[2]/AR*0.8,c[0]+c[2]*0.8,c[1]+c[2]/AR*0.8) for c in narrow]
     U=unary_union(boxes); eps=min(c[2] for c in narrow)/1080*0.6
@@ -147,6 +191,17 @@ for i,(names,fs) in enumerate(hls):
         d_=gpath(unary_union(gl),eps) if gl else ''
     if not d_: d_=' '.join(gp110(f) for f in fs)
     hl_groups.append('<path id="hl%d" class="hl" d="%s" style="opacity:0"/>'%(i,d_))
+geo_svg=''
+for i,geos in enumerate(GEOS):
+    for k,(g,r) in enumerate(geos):
+        cx,cy,span=cams[i]
+        if r[0]=='poly':
+            d_=gpath(r[1],max(span/1080*0.5,0.002))
+            if d_: geo_svg+='<path id="gp%d_%d" class="hl" d="%s" style="opacity:0"/>'%(i,k,d_)
+        else:
+            ls=list(r[1].geoms) if hasattr(r[1],'geoms') else [r[1]]
+            d_=' '.join('M'+' L'.join('%.1f,%.1f'%(X(x),Y(y)) for x,y in l.simplify(max(span/1080*0.4,0.002)).coords) for l in ls if not l.is_empty)
+            if d_: geo_svg+='<path id="gp%d_%d" class="rv" pathLength="1" d="%s" style="opacity:0"/>'%(i,k,d_)
 # arrows + suez line
 LINES=json.load(open(H+'/lines_osm.json')) if os.path.exists(H+'/lines_osm.json') else {}
 arrows_svg=''; arrow_ids={}
@@ -162,7 +217,7 @@ lpins=''.join('<circle id="lp%d_%d" cx="%.1f" cy="%.1f" r="0" class="pin"/>'%(i,
 pins=''.join('<circle id="pin%d" cx="%.1f" cy="%.1f" r="0" class="pin"/>'%(i,X(c[0]),Y(c[1])) for i,c in enumerate(cams) if c[2]<12)
 Wm=360*S; Hm=180*S
 svg=(f'<svg id="map" width="1080" height="1920" viewBox="0 0 {Wm} {Hm}" preserveAspectRatio="xMidYMid slice"><rect x="-30000" y="-30000" width="{Wm+60000}" height="{Hm+60000}" fill="#17335c"/>'
-     f'<path class="c" d="{base_d}"/><path class="c" d="{paths_d}"/>{"".join(hl_groups)}{osm_svg}{arrows_svg}{pins}{lpins}</svg>')
+     f'<path class="c" d="{base_d}"/><path class="c" d="{paths_d}"/>{"".join(hl_groups)}{geo_svg}{osm_svg}{arrows_svg}{pins}{lpins}</svg>')
 
 
 # 4. characters
@@ -181,6 +236,7 @@ html=f"""<!doctype html><html lang="ar"><head><meta charset="UTF-8"/><meta name=
 <style>@font-face{{font-family:"DejaVu Sans";src:local("DejaVu Sans")}}*{{margin:0;padding:0;box-sizing:border-box}}html,body{{width:1080px;height:1920px;overflow:hidden;background:#0a0a0a}}
 #root{{position:relative;width:1080px;height:1920px;overflow:hidden;font-family:"DejaVu Sans",sans-serif;direction:rtl}}
 .c{{fill:#e8d9b0;stroke:#b8a77c;stroke-width:.5;vector-effect:non-scaling-stroke}}.hl{{fill:#e0603f;stroke:#a83f26;stroke-width:.6;vector-effect:non-scaling-stroke}}
+.rv{{fill:none;stroke:#3fa9ff;stroke-width:8;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}}
 .cn{{fill:none;stroke:#3fa9ff;stroke-width:5;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}}
 .pin{{fill:#fff3;stroke:#fff;stroke-width:4;vector-effect:non-scaling-stroke}}.ar{{fill:none;stroke:#ffd24a;stroke-width:8;stroke-linecap:round;vector-effect:non-scaling-stroke;stroke-dasharray:0 1}}
 #map{{position:absolute;left:0;top:0}}.chr{{position:absolute;bottom:560px;opacity:0}}#ch_n{{left:40px}}#ch_a{{left:425px}}#ch_b{{right:40px}}
@@ -202,7 +258,11 @@ def snap(i,lb):
         lon,lat=float(lb['lon']),float(lb['lat'])
     except Exception: lon=lat=None
     names,fs=hls[i]
-    if fs:
+    if GEOS[i]:
+        bb=[r[1].bounds for g,r in GEOS[i]]; b=(min(q[0] for q in bb),min(q[1] for q in bb),max(q[2] for q in bb),max(q[3] for q in bb)); m=0.3*max(b[2]-b[0],b[3]-b[1])
+        if lon is None or not(b[0]-m<=lon<=b[2]+m and b[1]-m<=lat<=b[3]+m): lon,lat=(b[0]+b[2])/2,(b[1]+b[3])/2
+    elif fs:
+
         bs=[mainbbox(f) for f in fs]; b=(min(q[0] for q in bs),min(q[1] for q in bs),max(q[2] for q in bs),max(q[3] for q in bs)); m=0.5*max(b[2]-b[0],b[3]-b[1])
         if lon is None or not(b[0]-m<=lon<=b[2]+m and b[1]-m<=lat<=b[3]+m): lon,lat=(b[0]+b[2])/2,(b[1]+b[3])/2
     if lon is None: lon,lat=cams[i][0],cams[i][1]
@@ -228,6 +288,11 @@ for i,s in enumerate(sc['scenes']):
     html+=f'tl.to(vb,{{x:{X(cx)-w/2:.1f},y:{Y(cy)-h/2:.1f},w:{w:.1f},h:{h:.1f},duration:1.2,ease:"power2.inOut",onUpdate:set}},{max(0,t0-0.2):.2f});\n'
     html+=f'tl.to("#hl{i}",{{opacity:{0.4 if cams[i][2]<12 else 1},duration:.4}},{t0:.2f}).to("#hl{i}",{{opacity:0,duration:.25}},{t0+d+GAP-.1:.2f});\n'
     if cams[i][2]<12: html+=f'tl.to("#pin{i}",{{attr:{{r:{cams[i][2]*S*0.03:.1f}}},duration:.4}},{t0+.3:.2f}).to("#pin{i}",{{attr:{{r:0}},duration:.2}},{t0+d+GAP-.1:.2f});\n'
+    for k in range(len(GEOS[i])):
+        _m=re.search(r'id="gp%d_%d" class="(\w+)"'%(i,k),svg)
+        if not _m: continue
+        if _m.group(1)=='rv': html+=f'tl.fromTo("#gp{i}_{k}",{{opacity:1,strokeDasharray:"0 1"}},{{strokeDasharray:"1 0",duration:{min(2.5,d):.2f},ease:"none"}},{t0+.2:.2f}).to("#gp{i}_{k}",{{opacity:0,duration:.25}},{t0+d+GAP-.1:.2f});\n'
+        else: html+=f'tl.to("#gp{i}_{k}",{{opacity:1,duration:.4}},{t0:.2f}).to("#gp{i}_{k}",{{opacity:0,duration:.25}},{t0+d+GAP-.1:.2f});\n'
     html+=f'tl.to("#cap{i}",{{opacity:1,duration:.15}},{t0:.2f}).to("#cap{i}",{{opacity:0,duration:.1}},{t0+d+GAP-0.2:.2f});\n'
     nw=len(s['vo'].split())
     for j in range(nw): html+=f'tl.set("#w{i}_{j}",{{className:"on"}},{t0+d*j/nw:.2f});tl.set("#w{i}_{j}",{{className:""}},{t0+d*(j+1)/nw:.2f});\n'

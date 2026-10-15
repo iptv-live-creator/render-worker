@@ -29,6 +29,11 @@ jobs:
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-noto-core fonts-noto-ui-core
           pip install -q edge-tts shapely
+      - name: geo data
+        run: |
+          B=https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson
+          curl -sfL --retry 3 -o rivers10.json $B/ne_10m_rivers_lake_centerlines.geojson
+          curl -sfL --retry 3 -o admin1.json $B/ne_10m_admin_1_states_provinces.geojson
       - name: build project
         env:
           SCRIPT_B64: ${{ inputs.script_b64 }}
