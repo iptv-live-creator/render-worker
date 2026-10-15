@@ -77,6 +77,7 @@ def _pk(p,*ks): return {key(p.get(k)) for k in ks if p.get(k)}
 def resolve_geo(g):
     nm=str(g.get('name','')); typ=str(g.get('type','region')).lower(); k=key(nm)
     if not k: return None
+    k={'amazon':'amazonas','danube':'donau','rhine':'rhein','euphrates':'euphrates','mississippi':'mississippi'}.get(k,k) if typ=='river' else k
     if (nm,typ) in GEO_CACHE: return GEO_CACHE[(nm,typ)]
     out=None
     try:
@@ -129,6 +130,11 @@ for i,s in enumerate(sc['scenes']):
                         _b=_sg.bounds
                         if max(_b[2]-_b[0],_b[3]-_b[1])<=6: geos=[({'name':'auto','auto':True},('poly',_sg.buffer(0)))]
                         break
+                for _c in W110:   # the country around the pin, tinted lightly under the region
+                    try:
+                        _cg=shape(_c['geometry']).buffer(0)
+                        if _cg.contains(_pt): geos=[({'name':'autoc','auto':True,'soft':True},('poly',_cg))]+geos; break
+                    except Exception: pass
         except Exception as _e: print('auto region fail',_e)
     fo=s.get('focus'); fok=None
     try:
@@ -138,11 +144,11 @@ for i,s in enumerate(sc['scenes']):
         x0=min(p[0] for p in pts);x1=max(p[0] for p in pts);y0=min(p[1] for p in pts);y1=max(p[1] for p in pts)
         cx,cy=(x0+x1)/2,(y0+y1)/2; span=max((x1-x0)*1.5,(y1-y0)*1.5*AR,6)
         mg=0.25*max(x1-x0,(y1-y0))
-        if lblframe: span=max((x1-x0)*1.5,(y1-y0)*1.5*AR,9)
+        if lblframe: span=max((x1-x0)*1.5,(y1-y0)*1.5*AR,14)
         elif geos: span=max((x1-x0)*1.6,(y1-y0)*1.6*AR,5)
         elif fok and x0-mg<=fok[0]<=x1+mg and y0-mg<=fok[1]<=y1+mg: cx,cy,span=fok   # a close-up the planner asked for, inside the shown area
         else: span*=SH[i%len(SH)]
-        if lblframe: span=max((x1-x0)*1.5,(y1-y0)*1.5*AR,9)
+        if lblframe: span=max((x1-x0)*1.5,(y1-y0)*1.5*AR,14)
         elif geos: span=max((x1-x0)*1.6,(y1-y0)*1.6*AR,5)
     elif fok: cx,cy,span=fok
     else: cx,cy,span=10,20,140
@@ -315,7 +321,7 @@ for i,s in enumerate(sc['scenes']):
         _m=re.search(r'id="gp%d_%d" class="(\w+)"'%(i,k),svg)
         if not _m: continue
         if _m.group(1)=='rv': html+=f'tl.fromTo("#gp{i}_{k}",{{opacity:1,strokeDasharray:"0 1"}},{{strokeDasharray:"1 0",duration:{min(2.5,d):.2f},ease:"none"}},{t0+.2:.2f}).to("#gp{i}_{k}",{{opacity:0,duration:.25}},{t0+d+GAP-.1:.2f});\n'
-        else: html+=f'tl.to("#gp{i}_{k}",{{opacity:{0.45 if GEOS[i][k][0].get("auto") else 1},duration:.4}},{t0:.2f}).to("#gp{i}_{k}",{{opacity:0,duration:.25}},{t0+d+GAP-.1:.2f});\n'
+        else: html+=f'tl.to("#gp{i}_{k}",{{opacity:{(0.22 if GEOS[i][k][0].get("soft") else 0.5) if GEOS[i][k][0].get("auto") else 1},duration:.4}},{t0:.2f}).to("#gp{i}_{k}",{{opacity:0,duration:.25}},{t0+d+GAP-.1:.2f});\n'
     html+=f'tl.to("#cap{i}",{{opacity:1,duration:.15}},{t0:.2f}).to("#cap{i}",{{opacity:0,duration:.1}},{t0+d+GAP-0.2:.2f});\n'
     nw=len(s['vo'].split())
     for j in range(nw): html+=f'tl.set("#w{i}_{j}",{{className:"on"}},{t0+d*j/nw:.2f});tl.set("#w{i}_{j}",{{className:""}},{t0+d*(j+1)/nw:.2f});\n'
