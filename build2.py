@@ -75,7 +75,7 @@ def _rj(p):
 RIV=_rj('rivers10.json'); ADM1=_rj('admin1.json')
 def _pk(p,*ks): return {key(p.get(k)) for k in ks if p.get(k)}
 def resolve_geo(g):
-    nm=str(g.get('name','')); typ=str(g.get('type','region')).lower(); k=key(nm)
+    nm=str(g.get('name','')); typ=str(g.get('type','region')).lower(); k=key(re.sub(r'\b(river|the|lake|mount|mt)\b','',nm,flags=re.I))
     if not k: return None
     k={'amazon':'amazonas','danube':'donau','rhine':'rhein','euphrates':'euphrates','mississippi':'mississippi'}.get(k,k) if typ=='river' else k
     if (nm,typ) in GEO_CACHE: return GEO_CACHE[(nm,typ)]
