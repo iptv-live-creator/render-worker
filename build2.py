@@ -251,7 +251,7 @@ html=f"""<!doctype html><html lang="ar"><head><meta charset="UTF-8"/><meta name=
 """
 def scr(i,lon,lat):
     cx,cy,span=cams[i]; w=span*S; h=w/AR
-    px=(X(lon)-(X(cx)-w/2))/w*1080; py=(Y(lat)-(Y(cy)-h/2))/h*1920
+    px=(X(lon)-(X(cx)-w/2))/w*1080; py=(Y(lat)-(Y(cy)-h/2+0.1*h))/h*1920
     return px,py
 def snap(i,lb):
     try:
@@ -281,11 +281,11 @@ for i,s in enumerate(sc['scenes']):
 html+='</div><script>\nconst tl=gsap.timeline({paused:true});const ENV='+json.dumps([round(e,2) for e in env])+';const FPS='+str(FPS)+';\n'
 html+=f'const vb={{x:0,y:0,w:{Wm},h:{Hm}}};const set=()=>document.getElementById("map").setAttribute("viewBox",vb.x+" "+vb.y+" "+vb.w+" "+vb.h);\n'
 cx0,cy0,sp0=cams[0]; w0=sp0*S; h0=w0/AR
-html+=f'Object.assign(vb,{{x:{X(cx0)-w0/2:.1f},y:{Y(cy0)-h0/2:.1f},w:{w0:.1f},h:{h0:.1f}}});set();\n'
+html+=f'Object.assign(vb,{{x:{X(cx0)-w0/2:.1f},y:{Y(cy0)-h0/2+0.1*h0:.1f},w:{w0:.1f},h:{h0:.1f}}});set();\n'
 html+='tl.set("#ch_n,#ch_a,#ch_b",{opacity:1},0);\n'
 for i,s in enumerate(sc['scenes']):
     t0=starts[i];d=auds[i][1]; cx,cy,span=cams[i]; w=span*S; h=w/AR
-    html+=f'tl.to(vb,{{x:{X(cx)-w/2:.1f},y:{Y(cy)-h/2:.1f},w:{w:.1f},h:{h:.1f},duration:1.2,ease:"power2.inOut",onUpdate:set}},{max(0,t0-0.2):.2f});\n'
+    html+=f'tl.to(vb,{{x:{X(cx)-w/2:.1f},y:{Y(cy)-h/2+0.1*h:.1f},w:{w:.1f},h:{h:.1f},duration:1.2,ease:"power2.inOut",onUpdate:set}},{max(0,t0-0.2):.2f});\n'
     html+=f'tl.to("#hl{i}",{{opacity:{0.4 if cams[i][2]<12 else 1},duration:.4}},{t0:.2f}).to("#hl{i}",{{opacity:0,duration:.25}},{t0+d+GAP-.1:.2f});\n'
     if cams[i][2]<12: html+=f'tl.to("#pin{i}",{{attr:{{r:{cams[i][2]*S*0.03:.1f}}},duration:.4}},{t0+.3:.2f}).to("#pin{i}",{{attr:{{r:0}},duration:.2}},{t0+d+GAP-.1:.2f});\n'
     for k in range(len(GEOS[i])):
