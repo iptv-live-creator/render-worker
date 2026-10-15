@@ -106,6 +106,15 @@ for i,s in enumerate(sc['scenes']):
     names=[n for n in (s.get('countries') or []) if isinstance(n,str)][:4]
     fs=[f for f in (find(W110,n) for n in names) if f]
     pts=[]
+    if fs and s.get('labels'):
+        _bbs=[mainbbox(f) for f in fs]
+        def _lok(l):
+            try: x,y=float(l['lon']),float(l['lat'])
+            except Exception: return True
+            return any(bb[0]-2<=x<=bb[2]+2 and bb[1]-2<=y<=bb[3]+2 for bb in _bbs)
+        _kl=[l for l in s['labels'] if isinstance(l,dict) and _lok(l)]
+        if len(_kl)<len(s['labels']): print('label dropped outside scene countries',[l.get('text') for l in s['labels'] if l not in _kl])
+        s['labels']=_kl
     geos=[(g,resolve_geo(g)) for g in (s.get('geo') or []) if isinstance(g,dict)][:3]
     geos=[(g,r) for g,r in geos if r]
     _ctx=[]
