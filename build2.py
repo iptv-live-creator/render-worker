@@ -109,6 +109,11 @@ for i,s in enumerate(sc['scenes']):
     for a in s.get('arrows') or []:
         try: pts+=[(a[0],a[1]),(a[2],a[3])]
         except Exception: pass
+    if not pts and 0<i<len(sc['scenes'])-1:   # mid scene with only pins/labels: frame the labelled place itself, never the whole world
+        for lb in (s.get('labels') or []):
+            try:
+                if isinstance(lb,dict) and -180<=float(lb['lon'])<=180 and -90<=float(lb['lat'])<=90: pts+=[(float(lb['lon'])-3,float(lb['lat'])-2),(float(lb['lon'])+3,float(lb['lat'])+2)]
+            except Exception: pass
     fo=s.get('focus'); fok=None
     try:
         if fo and len(fo)==3: fok=(float(fo[0]),float(fo[1]),max(4,min(200,float(fo[2]))))
