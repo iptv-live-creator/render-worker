@@ -3,6 +3,9 @@ H=os.path.dirname(os.path.abspath(__file__)); OUT=sys.argv[2] if len(sys.argv)>2
 sc=json.load(open(sys.argv[1])); os.makedirs(OUT+'/assets',exist_ok=True)
 VOICES={'n':('ar-EG-ShakirNeural','+0Hz'),'a':('ar-EG-ShakirNeural','+40Hz'),'b':('ar-EG-SalmaNeural','+0Hz'),'c':('ar-EG-SalmaNeural','-20Hz')}
 SPK={'narrator':'n','n':'n','a':'a','b':'b','c':'c'}
+import re as _re
+for _s in sc['scenes']:
+    if _re.search(r'[A-Za-z0-9]',_s.get('vo','')): raise SystemExit('lint: Latin/digit in voice line: '+_s['vo'][:60])
 for _s in sc['scenes']: _s['spk']=SPK.get(str(_s.get('speaker','n')).lower(),'n')
 FPS=15; GAP=0.35
 # 1. voices
@@ -10,7 +13,7 @@ auds=[]
 for i,s in enumerate(sc['scenes']):
     v,p=VOICES[s['spk']]; f=f'{OUT}/assets/s{i}.mp3'
     for _t in range(4):
-        r=subprocess.run(['python3','-m','edge_tts','--voice',v,'--pitch',p,'--text',s['vo'],'--write-media',f],capture_output=True,timeout=60)
+        r=subprocess.run(['python3','-m','edge_tts','--voice',v,'--pitch='+p,'--text',s['vo'],'--write-media',f],capture_output=True,timeout=60)
         if r.returncode==0 and os.path.getsize(f)>1000: break
     else: raise SystemExit('tts failed: '+r.stderr.decode()[-200:])
     d=float(subprocess.check_output(['ffprobe','-v','error','-show_entries','format=duration','-of','csv=p=0',f]))
