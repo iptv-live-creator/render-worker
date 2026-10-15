@@ -1,7 +1,7 @@
 import json,subprocess,sys,os,math,struct,wave,asyncio
 H=os.path.dirname(os.path.abspath(__file__)); OUT=sys.argv[2] if len(sys.argv)>2 else '/tmp/hf/suez'
 sc=json.load(open(sys.argv[1])); os.makedirs(OUT+'/assets',exist_ok=True)
-VOICES={'n':('ar-EG-ShakirNeural','+0Hz'),'a':('ar-EG-ShakirNeural','+40Hz'),'b':('ar-EG-SalmaNeural','+0Hz'),'c':('ar-EG-SalmaNeural','-20Hz')}
+VOICES={'n':('ar-EG-ShakirNeural','+0Hz'),'a':('ar-EG-ShakirNeural','+40Hz'),'b':('ar-EG-SalmaNeural','+0Hz'),'c':('ar-EG-ShakirNeural','-15Hz')}
 SPK={'narrator':'n','n':'n','a':'a','b':'b','c':'c'}
 import re as _re
 for _s in sc['scenes']:
@@ -12,10 +12,15 @@ FPS=15; GAP=0.35
 auds=[]
 for i,s in enumerate(sc['scenes']):
     v,p=VOICES[s['spk']]; f=f'{OUT}/assets/s{i}.mp3'
-    for _t in range(4):
-        r=subprocess.run(['python3','-m','edge_tts','--voice',v,'--pitch='+p,'--text',s['vo'],'--write-media',f],capture_output=True,timeout=60)
+    import re as _r2
+    clean=_r2.sub(r'[^\u0600-\u06FF\s.,!?؟،:؛-]','',s['vo']).strip()
+    for _t in range(5):
+        vv,pp,tx=v,p,s['vo']
+        if _t>=2: pp='+0Hz'
+        if _t>=3: tx=clean
+        r=subprocess.run(['python3','-m','edge_tts','--voice',vv]+([] if pp=='+0Hz' else ['--pitch='+pp])+['--text',tx,'--write-media',f],capture_output=True,timeout=60)
         if r.returncode==0 and os.path.getsize(f)>1000: break
-    else: raise SystemExit('tts failed: '+r.stderr.decode()[-200:])
+    else: raise SystemExit('tts failed: '+s['vo'][:80]+' | '+r.stderr.decode()[-200:])
     d=float(subprocess.check_output(['ffprobe','-v','error','-show_entries','format=duration','-of','csv=p=0',f]))
     auds.append((f,d))
 # 2. master audio + envelope
