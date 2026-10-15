@@ -136,6 +136,16 @@ for i,s in enumerate(sc['scenes']):
                         if _cg.contains(_pt): geos=[({'name':'autoc','auto':True,'soft':True},('poly',_cg))]+geos; break
                     except Exception: pass
         except Exception as _e: print('auto region fail',_e)
+    if geos and not any(g.get('auto') for g,_r in geos) and any(r[0]=='poly' for g,r in geos):   # small place polygon: soft country tint underneath for map context
+        try:
+            _bb=[r[1].bounds for g,r in geos]; _ext=max(max(q[2]-q[0],q[3]-q[1]) for q in _bb)
+            if _ext<4:
+                from shapely.geometry import Point as _P3
+                _cp=geos[0][1][1].representative_point()
+                for _c in W110:
+                    _cg=shape(_c['geometry']).buffer(0)
+                    if _cg.contains(_cp): geos=[({'name':'autoc','auto':True,'soft':True},('poly',_cg))]+geos; break
+        except Exception as _e: print('small-place tint fail',_e)
     fo=s.get('focus'); fok=None
     try:
         if fo and len(fo)==3: fok=(float(fo[0]),float(fo[1]),max(4,min(200,float(fo[2]))))
