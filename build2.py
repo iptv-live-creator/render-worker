@@ -185,7 +185,7 @@ html=f"""<!doctype html><html lang="ar"><head><meta charset="UTF-8"/><meta name=
 .pin{{fill:#fff3;stroke:#fff;stroke-width:4;vector-effect:non-scaling-stroke}}.ar{{fill:none;stroke:#ffd24a;stroke-width:8;stroke-linecap:round;vector-effect:non-scaling-stroke;stroke-dasharray:0 1}}
 #map{{position:absolute;left:0;top:0}}.chr{{position:absolute;bottom:560px;opacity:0}}#ch_n{{left:40px}}#ch_a{{left:425px}}#ch_b{{right:40px}}
 .lab{{position:absolute;background:#0b1f3add;color:#fff;padding:14px 30px;border-radius:40px;font-size:54px;font-weight:700;opacity:0;white-space:nowrap;transform:translateX(-50%)}}
-.cap{{position:absolute;left:60px;right:60px;bottom:170px;background:#000a;color:#fff;font-size:64px;line-height:1.5;padding:30px;border-radius:36px;text-align:center;font-weight:700;opacity:0}}
+.cap{{position:absolute;left:60px;right:60px;bottom:170px;background:#0b1226f2;color:#fff;font-size:64px;line-height:1.5;padding:30px;border-radius:36px;text-align:center;font-weight:700;opacity:0}}
 .cap span{{opacity:.55}}.cap span.on{{opacity:1;color:#ffd24a}}#src{{position:absolute;left:20px;bottom:40px;color:#fff;background:#000c;padding:6px 12px;border-radius:10px;font-size:26px;direction:ltr}}
 </style></head><body>
 <div id="root" data-composition-id="main" data-start="0" data-duration="{TOT}" data-width="1080" data-height="1920">
