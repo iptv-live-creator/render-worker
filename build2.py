@@ -326,7 +326,7 @@ for i,s in enumerate(sc['scenes']):
     nw=len(s['vo'].split())
     for j in range(nw): html+=f'tl.set("#w{i}_{j}",{{className:"on"}},{t0+d*j/nw:.2f});tl.set("#w{i}_{j}",{{className:""}},{t0+d*(j+1)/nw:.2f});\n'
     for k in range(2):
-        if (i,k) in labpos and ('id="lp%d_%d"'%(i,k)) in svg: html+=f'tl.to("#lp{i}_{k}",{{attr:{{r:{max(cams[i][2]*S*0.02,60):.1f}}},duration:.4}},{t0+.3+k*.8:.2f}).to("#lp{i}_{k}",{{attr:{{r:0}},duration:.2}},{t0+d+GAP-.1:.2f});\n'
+        if (i,k) in labpos and ('id="lp%d_%d"'%(i,k)) in svg: html+=f'tl.to("#lp{i}_{k}",{{attr:{{r:{max(cams[i][2]*S*0.01,18):.1f}}},duration:.4}},{t0+.3+k*.8:.2f}).to("#lp{i}_{k}",{{attr:{{r:0}},duration:.2}},{t0+d+GAP-.1:.2f});\n'
         if (i,k) in labpos: html+=f'tl.to("#l{i}_{k}",{{opacity:1,duration:.3}},{t0+.3+k*.8:.2f}).to("#l{i}_{k}",{{opacity:0,duration:.2}},{t0+d+GAP-.1:.2f});\n'
     for k in range(3):
         if s.get('arrows') and k<len(s['arrows']) and k<3: html+=f'tl.to("#ar{i}_{k}",{{strokeDasharray:"1 0",duration:{min(2.2,d):.2f},ease:"none"}},{t0+.2+k*.4:.2f}).to("#ar{i}_{k}",{{opacity:0,duration:.2}},{t0+d+GAP-.1:.2f});\n'
