@@ -7,6 +7,10 @@ SPK={'narrator':'n','n':'n','a':'a','b':'b','c':'c'}
 import re as _re
 for _s in sc['scenes']:
     if _re.search(r'[A-Za-z0-9]',_s.get('vo','')): raise SystemExit('lint: Latin/digit in voice line: '+_s['vo'][:60])
+import unicodedata as _ud
+for _s in sc['scenes']:
+    if isinstance(_s.get('vo'),str):
+        _s['vo']=_re.sub(r'\s+',' ',_re.sub(r'[\u200b-\u200f\u202a-\u202e\u2060\ufeff\u0640\u064b-\u065f\u0670]','',_ud.normalize('NFKC',_s['vo']))).strip()
 for _s in sc['scenes']: _s['spk']=SPK.get(str(_s.get('speaker','n')).lower(),'n')
 FPS=15; GAP=0.35
 # 1. voices
@@ -278,7 +282,7 @@ if 'suez' in LINES and ('السويس' in txt_all or 'suez' in txt_all):
     osm_svg=''.join('<path class="cn" pathLength="1" d="M'+' L'.join('%.1f,%.1f'%(X(p[0]),Y(p[1])) for p in ln)+'"/>' for ln in LINES['suez'])
 lpins=''.join('<circle id="lp%d_%d" cx="%.1f" cy="%.1f" r="0" class="pin"/>'%(i,k,X(float(lb['lon'])),Y(float(lb['lat']))) for i,s_ in enumerate(sc['scenes']) for k,lb in enumerate((s_.get('labels') or [])[:2]) if isinstance(lb,dict) and lb.get('text') and isinstance(lb.get('lon'),(int,float)) and isinstance(lb.get('lat'),(int,float)) and -180<=lb['lon']<=180 and -90<=lb['lat']<=90)
 def _hasl(i): return any(isinstance(l,dict) and isinstance(l.get('lon'),(int,float)) and isinstance(l.get('lat'),(int,float)) for l in (sc['scenes'][i].get('labels') or [])[:2])
-pins=''.join('<circle id="pin%d" cx="%.1f" cy="%.1f" r="0" class="pin"/>'%(i,X(c[0]),Y(c[1])) for i,c in enumerate(cams) if (c[2]<12 or (c[2]<30 and not _hasl(i))))
+pins=''.join('<circle id="pin%d" cx="%.1f" cy="%.1f" r="0" class="pin"/>'%(i,X(c[0]),Y(c[1])) for i,c in enumerate(cams) if (c[2]<12 or (c[2]<70 and not _hasl(i))))
 Wm=360*S; Hm=180*S
 svg=(f'<svg id="map" width="1080" height="1920" viewBox="0 0 {Wm} {Hm}" preserveAspectRatio="xMidYMid slice"><rect x="-30000" y="-30000" width="{Wm+60000}" height="{Hm+60000}" fill="#17335c"/>'
      f'<path class="c" d="{base_d}"/><path class="c" d="{paths_d}"/>{"".join(hl_groups)}{geo_svg}{osm_svg}{arrows_svg}{pins}{lpins}</svg>')
@@ -372,7 +376,7 @@ for i,s in enumerate(sc['scenes']):
     t0=starts[i];d=auds[i][1]; cx,cy,span=cams[i]; w=span*S; h=w/AR
     html+=f'tl.to(vb,{{x:{X(cx)-w/2:.1f},y:{Y(cy)-h/2+0.1*h:.1f},w:{w:.1f},h:{h:.1f},duration:1.2,ease:"power2.inOut",onUpdate:set}},{max(0,t0-0.2):.2f});\n'
     html+=f'tl.to("#hl{i}",{{opacity:{0.4 if cams[i][2]<12 else 1},duration:.4}},{t0:.2f}).to("#hl{i}",{{opacity:0,duration:.25}},{t0+d+GAP-.1:.2f});\n'
-    if cams[i][2]<12 or (cams[i][2]<30 and not _hasl(i)): html+=f'tl.to("#pin{i}",{{attr:{{r:{max(cams[i][2]*S*(0.03 if cams[i][2]<12 else 0.012),18):.1f}}},duration:.4}},{t0+.3:.2f}).to("#pin{i}",{{attr:{{r:0}},duration:.2}},{t0+d+GAP-.1:.2f});\n'
+    if cams[i][2]<12 or (cams[i][2]<70 and not _hasl(i)): html+=f'tl.to("#pin{i}",{{attr:{{r:{max(cams[i][2]*S*(0.03 if cams[i][2]<12 else 0.012),18):.1f}}},duration:.4}},{t0+.3:.2f}).to("#pin{i}",{{attr:{{r:0}},duration:.2}},{t0+d+GAP-.1:.2f});\n'
     for k in range(len(GEOS[i])):
         _m=re.search(r'id="gp%d_%d" class="(\w+)"'%(i,k),svg)
         if not _m: continue
