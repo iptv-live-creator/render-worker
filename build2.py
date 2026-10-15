@@ -96,7 +96,7 @@ def resolve_geo(g):
     except Exception as e: print('geo fail',nm,e)
     GEO_CACHE[(nm,typ)]=out; print('geo',nm,typ,'->',out[0] if out else None); return out
 SH=[1.9,1.0,0.55,1.3,0.45,2.2,1.0,0.6]
-cams=[];hls=[];GEOS=[]
+cams=[];hls=[];GEOS=[];_last=None;_dflt=False
 for i,s in enumerate(sc['scenes']):
     names=[n for n in (s.get('countries') or []) if isinstance(n,str)][:4]
     fs=[f for f in (find(W110,n) for n in names) if f]
@@ -110,7 +110,7 @@ for i,s in enumerate(sc['scenes']):
     for a in s.get('arrows') or []:
         try: pts+=[(a[0],a[1]),(a[2],a[3])]
         except Exception: pass
-    lblframe=False
+    lblframe=False; _dflt=False
     if not pts and 0<i<len(sc['scenes'])-1:   # mid scene with only pins/labels: frame the labelled place itself, never the whole world
         for lb in (s.get('labels') or []):
             try:
@@ -151,8 +151,9 @@ for i,s in enumerate(sc['scenes']):
         if lblframe: span=max((x1-x0)*1.5,(y1-y0)*1.5*AR,14)
         elif geos: span=max((x1-x0)*1.6,(y1-y0)*1.6*AR,5)
     elif fok: cx,cy,span=fok
-    else: cx,cy,span=10,20,140
+    else: cx,cy,span=_last if _last else (10,20,140); _dflt=not _last
     span=max(5,min(160,span))
+    if pts or fok: _last=(cx,cy,span)
     vis=span/AR; cy=max(-90+vis/2,min(90-vis/2,cy)) if vis<180 else 15
     if not fs and not geos and not s.get('nocountry'):
         from shapely.geometry import Point
@@ -161,7 +162,7 @@ for i,s in enumerate(sc['scenes']):
             try:
                 if shape(f['geometry']).buffer(0).contains(pt): fs=[f]; names=[f['properties']['ADMIN']]; break
             except Exception: pass
-    if not fs and not geos and s.get('nocountry'):   # no resolved geometry: soft country tint only, for context (never a full highlight)
+    if not fs and not geos and s.get('nocountry') and span<=60 and not _dflt:   # no resolved geometry: soft country tint only, for context (never a full highlight)
         try:
             from shapely.geometry import Point as _P2
             _p2=_P2(cx,cy)
