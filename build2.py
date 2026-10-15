@@ -161,6 +161,14 @@ for i,s in enumerate(sc['scenes']):
             try:
                 if shape(f['geometry']).buffer(0).contains(pt): fs=[f]; names=[f['properties']['ADMIN']]; break
             except Exception: pass
+    if not fs and not geos and s.get('nocountry'):   # no resolved geometry: soft country tint only, for context (never a full highlight)
+        try:
+            from shapely.geometry import Point as _P2
+            _p2=_P2(cx,cy)
+            for _c in W110:
+                _cg=shape(_c['geometry']).buffer(0)
+                if _cg.contains(_p2): geos=[({'name':'autoc','auto':True,'soft':True},('poly',_cg))]; break
+        except Exception as _e: print('soft tint fail',_e)
     cams.append((cx,cy,span)); hls.append((names,fs)); GEOS.append(geos)
 narrow=[c for c in cams if c[2]<=45]
 paths_d=''
@@ -269,7 +277,7 @@ html=f"""<!doctype html><html lang="ar"><head><meta charset="UTF-8"/><meta name=
 .cn{{fill:none;stroke:#3fa9ff;stroke-width:5;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}}
 .pin{{fill:#e0523ad9;stroke:#fff;stroke-width:6;vector-effect:non-scaling-stroke}}.ar{{fill:none;stroke:#ffd24a;stroke-width:8;stroke-linecap:round;vector-effect:non-scaling-stroke;stroke-dasharray:0 1}}
 #map{{position:absolute;left:0;top:0}}.chr{{position:absolute;bottom:560px;opacity:0}}#ch_n{{left:40px}}#ch_a{{left:425px}}#ch_b{{right:40px}}
-.lab{{position:absolute;background:#0b1f3add;color:#fff;padding:14px 30px;border-radius:40px;font-size:54px;font-weight:700;opacity:0;white-space:nowrap;transform:translateX(-50%)}}
+.nb{{position:absolute;color:#4a3f22;font-size:38px;font-weight:700;opacity:0;white-space:nowrap;transform:translateX(-50%);text-shadow:0 0 6px #e8d9b0,0 0 6px #e8d9b0,0 0 10px #e8d9b0}}.lab{{position:absolute;background:#0b1f3add;color:#fff;padding:14px 30px;border-radius:40px;font-size:54px;font-weight:700;opacity:0;white-space:nowrap;transform:translateX(-50%)}}
 .cap{{position:absolute;left:60px;right:60px;bottom:170px;background:#0b1226f2;color:#fff;font-size:64px;line-height:1.5;padding:30px;border-radius:36px;text-align:center;font-weight:700;opacity:0}}
 .cap span{{opacity:.55}}.cap span.on{{opacity:1;color:#ffd24a}}#src{{position:absolute;left:20px;bottom:40px;color:#fff;background:#000c;padding:6px 12px;border-radius:10px;font-size:26px;direction:ltr}}
 </style></head><body>
@@ -296,7 +304,7 @@ def snap(i,lb):
         if lon is None or not(b[0]-m<=lon<=b[2]+m and b[1]-m<=lat<=b[3]+m): lon,lat=(b[0]+b[2])/2,(b[1]+b[3])/2
     if lon is None: lon,lat=cams[i][0],cams[i][1]
     return scr(i,lon,lat)
-labpos={}
+labpos={}; labpos_xy={}
 for i,s in enumerate(sc['scenes']):
     ws=s['vo'].split(); html+=f'<div id="cap{i}" class="cap clip" data-start="0" data-duration="{TOT}" data-track-index="{20+i}">'+' '.join(f'<span id="w{i}_{j}">{w}</span>' for j,w in enumerate(ws))+'</div>\n'
     placed=[]
@@ -305,8 +313,29 @@ for i,s in enumerate(sc['scenes']):
         px,py=snap(i,lb); px=min(900,max(180,px)); py=min(1000,max(260,py))
         for (qx,qy) in placed:
             if abs(py-qy)<110 and abs(px-qx)<420: py=qy+120 if qy+120<1000 else qy-120
-        placed.append((px,py)); labpos[(i,k)]=1
+        placed.append((px,py)); labpos[(i,k)]=1; labpos_xy.setdefault(i,[]).append((px,py))
         html+=f'<div id="l{i}_{k}" class="lab clip" data-start="0" data-duration="{TOT}" data-track-index="{40+i*2+k}" style="left:{px:.0f}px;top:{py:.0f}px">{lb["text"]}</div>\n'
+NB={}
+def _nbl(i):
+    cx,cy,span=cams[i]; out=[]
+    if span>70: return out
+    for f in W10:
+        p=f['properties']; nm=p.get('NAME_AR')
+        if not nm: continue
+        try:
+            g=shape(f['geometry'])
+            rp=g.representative_point()
+            if not(cx-span*0.5<=rp.x<=cx+span*0.5 and cy-span/AR*0.5<=rp.y<=cy+span/AR*0.5): continue
+            px,py=scr(i,rp.x,rp.y)
+            if 110<=px<=970 and 230<=py<=1000: out.append((g.area,nm,px,py))
+        except Exception: pass
+    out.sort(reverse=True); return out[:6]
+for i,s_ in enumerate(sc['scenes']):
+    taken=list(labpos_xy.get(i,[])) if 'labpos_xy' in globals() else []
+    for k,(ar_,nm,px,py) in enumerate(_nbl(i)):
+        if any(abs(px-qx)<260 and abs(py-qy)<120 for qx,qy in taken): continue
+        taken.append((px,py)); NB[(i,k)]=1
+        html+=f'<div id="nb{i}_{k}" class="nb clip" data-start="0" data-duration="{TOT}" data-track-index="{80+i*8+k}" style="left:{px:.0f}px;top:{py:.0f}px">{nm}</div>\n'
 html+='</div><script>\nconst tl=gsap.timeline({paused:true});const ENV='+json.dumps([round(e,2) for e in env])+';const FPS='+str(FPS)+';\n'
 html+=f'const vb={{x:0,y:0,w:{Wm},h:{Hm}}};const set=()=>document.getElementById("map").setAttribute("viewBox",vb.x+" "+vb.y+" "+vb.w+" "+vb.h);\n'
 cx0,cy0,sp0=cams[0]; w0=sp0*S; h0=w0/AR
@@ -322,6 +351,8 @@ for i,s in enumerate(sc['scenes']):
         if not _m: continue
         if _m.group(1)=='rv': html+=f'tl.fromTo("#gp{i}_{k}",{{opacity:1,strokeDasharray:"0 1"}},{{strokeDasharray:"1 0",duration:{min(2.5,d):.2f},ease:"none"}},{t0+.2:.2f}).to("#gp{i}_{k}",{{opacity:0,duration:.25}},{t0+d+GAP-.1:.2f});\n'
         else: html+=f'tl.to("#gp{i}_{k}",{{opacity:{(0.22 if GEOS[i][k][0].get("soft") else 0.5) if GEOS[i][k][0].get("auto") else 1},duration:.4}},{t0:.2f}).to("#gp{i}_{k}",{{opacity:0,duration:.25}},{t0+d+GAP-.1:.2f});\n'
+    for (_i,_k) in list(NB):
+        if _i==i: html+=f'tl.to("#nb{i}_{_k}",{{opacity:.8,duration:.4}},{t0+.2:.2f}).to("#nb{i}_{_k}",{{opacity:0,duration:.2}},{t0+d+GAP-.1:.2f});\n'
     html+=f'tl.to("#cap{i}",{{opacity:1,duration:.15}},{t0:.2f}).to("#cap{i}",{{opacity:0,duration:.1}},{t0+d+GAP-0.2:.2f});\n'
     nw=len(s['vo'].split())
     for j in range(nw): html+=f'tl.set("#w{i}_{j}",{{className:"on"}},{t0+d*j/nw:.2f});tl.set("#w{i}_{j}",{{className:""}},{t0+d*(j+1)/nw:.2f});\n'
