@@ -109,10 +109,11 @@ for i,s in enumerate(sc['scenes']):
     for a in s.get('arrows') or []:
         try: pts+=[(a[0],a[1]),(a[2],a[3])]
         except Exception: pass
+    lblframe=False
     if not pts and 0<i<len(sc['scenes'])-1:   # mid scene with only pins/labels: frame the labelled place itself, never the whole world
         for lb in (s.get('labels') or []):
             try:
-                if isinstance(lb,dict) and -180<=float(lb['lon'])<=180 and -90<=float(lb['lat'])<=90: pts+=[(float(lb['lon'])-3,float(lb['lat'])-2),(float(lb['lon'])+3,float(lb['lat'])+2)]
+                if isinstance(lb,dict) and -180<=float(lb['lon'])<=180 and -90<=float(lb['lat'])<=90: pts+=[(float(lb['lon'])-3,float(lb['lat'])-2),(float(lb['lon'])+3,float(lb['lat'])+2)]; lblframe=True
             except Exception: pass
     fo=s.get('focus'); fok=None
     try:
@@ -122,10 +123,12 @@ for i,s in enumerate(sc['scenes']):
         x0=min(p[0] for p in pts);x1=max(p[0] for p in pts);y0=min(p[1] for p in pts);y1=max(p[1] for p in pts)
         cx,cy=(x0+x1)/2,(y0+y1)/2; span=max((x1-x0)*1.5,(y1-y0)*1.5*AR,6)
         mg=0.25*max(x1-x0,(y1-y0))
-        if geos: span=max((x1-x0)*1.6,(y1-y0)*1.6*AR,5)
+        if lblframe: span=max((x1-x0)*1.5,(y1-y0)*1.5*AR,9)
+        elif geos: span=max((x1-x0)*1.6,(y1-y0)*1.6*AR,5)
         elif fok and x0-mg<=fok[0]<=x1+mg and y0-mg<=fok[1]<=y1+mg: cx,cy,span=fok   # a close-up the planner asked for, inside the shown area
         else: span*=SH[i%len(SH)]
-        if geos: span=max((x1-x0)*1.6,(y1-y0)*1.6*AR,5)
+        if lblframe: span=max((x1-x0)*1.5,(y1-y0)*1.5*AR,9)
+        elif geos: span=max((x1-x0)*1.6,(y1-y0)*1.6*AR,5)
     elif fok: cx,cy,span=fok
     else: cx,cy,span=10,20,140
     span=max(5,min(160,span))
