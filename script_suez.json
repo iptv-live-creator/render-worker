@@ -1,0 +1,8 @@
+{"title":"حكاية قناة السويس","sources":["https://ar.wikipedia.org/wiki/قناة_السويس","https://www.suezcanal.gov.eg/Arabic/About/WhySuezCanal/Pages/ImportanceAndAdvantages.aspx"],
+"scenes":[
+{"spk":"a","vo":"أهلاً بيكم في خريطة العالم، تعالوا نشوف ليه حتة مياه في مصر مهمة قوي كده.","focus":"region","label":["قناة السويس",null]},
+{"spk":"b","vo":"القناة بتربط البحر المتوسط بالبحر الأحمر مباشرة، من بورسعيد لحد السويس.","focus":"canal","label":["بورسعيد","السويس"],"draw":true},
+{"spk":"a","vo":"الحفر بدأ سنة ألف وتمانمية وتسعة وخمسين، واستغرق عشر سنين.","focus":"canal","label":[null,null],"draw":true},
+{"spk":"b","vo":"وسنة ألف وتمانمية وتسعة وستين اتفتحت رسمياً في عهد الخديوي إسماعيل.","focus":"canal","label":[null,null],"draw":true},
+{"spk":"a","vo":"وكده بقت نسبة كبيرة من التجارة العالمية بتعدي من هنا، وبتختصر لفة أفريقيا الطويلة.","focus":"region","label":["شريان التجارة",null]}
+]}

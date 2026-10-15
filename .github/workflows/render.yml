@@ -1,0 +1,39 @@
+name: render
+on:
+  workflow_dispatch:
+    inputs:
+      script_b64:
+        description: "base64 of the scene script JSON (empty = bundled Suez sample)"
+        required: false
+        default: ""
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      DO_NOT_TRACK: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: deps
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-noto-core fonts-noto-ui-core
+          pip install -q edge-tts
+      - name: build project
+        env:
+          SCRIPT_B64: ${{ inputs.script_b64 }}
+        run: |
+          if [ -n "$SCRIPT_B64" ]; then echo "$SCRIPT_B64" | base64 -d > script.json; else cp script_suez.json script.json; fi
+          mkdir -p proj && cp template/* proj/
+          python3 build.py script.json "$PWD/proj"
+      - name: render
+        run: |
+          cd proj && npx --yes hyperframes@0.8.162 render -o ../out.mp4 --quiet
+          ls -l ../out.mp4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: video
+          path: out.mp4
+          retention-days: 1
