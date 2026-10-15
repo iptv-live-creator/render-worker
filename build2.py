@@ -1,3 +1,4 @@
+import math
 import json,subprocess,sys,os,math,struct,wave,asyncio
 H=os.path.dirname(os.path.abspath(__file__)); OUT=sys.argv[2] if len(sys.argv)>2 else '/tmp/hf/suez'
 sc=json.load(open(sys.argv[1])); os.makedirs(OUT+'/assets',exist_ok=True)
@@ -173,6 +174,7 @@ for i,s in enumerate(sc['scenes']):
         else: span*=SH[i%len(SH)]
         if lblframe: span=max((x1-x0)*1.5,(y1-y0)*1.5*AR,9)
         elif geos: span=max((x1-x0)*1.6,(y1-y0)*1.6*AR,5)
+    elif fok and _last and not (s.get('labels') or s.get('arrows')) and math.hypot(fok[0]-_last[0],fok[1]-_last[1])>50: cx,cy,span=_last   # unlabeled far jump: inherit previous camera
     elif fok: cx,cy,span=fok
     else: cx,cy,span=_last if _last else (10,20,140); _dflt=not _last
     span=max(5,min(160,span))
