@@ -246,7 +246,7 @@ html=f"""<!doctype html><html lang="ar"><head><meta charset="UTF-8"/><meta name=
 .c{{fill:#e8d9b0;stroke:#b8a77c;stroke-width:.5;vector-effect:non-scaling-stroke}}.hl{{fill:#e0603f;stroke:#a83f26;stroke-width:.6;vector-effect:non-scaling-stroke}}
 .rv{{fill:none;stroke:#3fa9ff;stroke-width:8;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}}
 .cn{{fill:none;stroke:#3fa9ff;stroke-width:5;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}}
-.pin{{fill:#fff3;stroke:#fff;stroke-width:4;vector-effect:non-scaling-stroke}}.ar{{fill:none;stroke:#ffd24a;stroke-width:8;stroke-linecap:round;vector-effect:non-scaling-stroke;stroke-dasharray:0 1}}
+.pin{{fill:#e0523ad9;stroke:#fff;stroke-width:6;vector-effect:non-scaling-stroke}}.ar{{fill:none;stroke:#ffd24a;stroke-width:8;stroke-linecap:round;vector-effect:non-scaling-stroke;stroke-dasharray:0 1}}
 #map{{position:absolute;left:0;top:0}}.chr{{position:absolute;bottom:560px;opacity:0}}#ch_n{{left:40px}}#ch_a{{left:425px}}#ch_b{{right:40px}}
 .lab{{position:absolute;background:#0b1f3add;color:#fff;padding:14px 30px;border-radius:40px;font-size:54px;font-weight:700;opacity:0;white-space:nowrap;transform:translateX(-50%)}}
 .cap{{position:absolute;left:60px;right:60px;bottom:170px;background:#0b1226f2;color:#fff;font-size:64px;line-height:1.5;padding:30px;border-radius:36px;text-align:center;font-weight:700;opacity:0}}
@@ -305,7 +305,7 @@ for i,s in enumerate(sc['scenes']):
     nw=len(s['vo'].split())
     for j in range(nw): html+=f'tl.set("#w{i}_{j}",{{className:"on"}},{t0+d*j/nw:.2f});tl.set("#w{i}_{j}",{{className:""}},{t0+d*(j+1)/nw:.2f});\n'
     for k in range(2):
-        if (i,k) in labpos and ('id="lp%d_%d"'%(i,k)) in svg: html+=f'tl.to("#lp{i}_{k}",{{attr:{{r:{max(cams[i][2]*S*0.012,40):.1f}}},duration:.4}},{t0+.3+k*.8:.2f}).to("#lp{i}_{k}",{{attr:{{r:0}},duration:.2}},{t0+d+GAP-.1:.2f});\n'
+        if (i,k) in labpos and ('id="lp%d_%d"'%(i,k)) in svg: html+=f'tl.to("#lp{i}_{k}",{{attr:{{r:{max(cams[i][2]*S*0.02,60):.1f}}},duration:.4}},{t0+.3+k*.8:.2f}).to("#lp{i}_{k}",{{attr:{{r:0}},duration:.2}},{t0+d+GAP-.1:.2f});\n'
         if (i,k) in labpos: html+=f'tl.to("#l{i}_{k}",{{opacity:1,duration:.3}},{t0+.3+k*.8:.2f}).to("#l{i}_{k}",{{opacity:0,duration:.2}},{t0+d+GAP-.1:.2f});\n'
     for k in range(3):
         if s.get('arrows') and k<len(s['arrows']) and k<3: html+=f'tl.to("#ar{i}_{k}",{{strokeDasharray:"1 0",duration:{min(2.2,d):.2f},ease:"none"}},{t0+.2+k*.4:.2f}).to("#ar{i}_{k}",{{opacity:0,duration:.2}},{t0+d+GAP-.1:.2f});\n'
