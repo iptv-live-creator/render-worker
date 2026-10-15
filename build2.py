@@ -94,6 +94,13 @@ for i,s in enumerate(sc['scenes']):
     else: cx,cy,span=10,20,140
     span=max(5,min(160,span))
     vis=span/AR; cy=max(-90+vis/2,min(90-vis/2,cy)) if vis<180 else 15
+    if not fs:
+        from shapely.geometry import Point
+        pt=Point(cx,cy)
+        for f in W110:
+            try:
+                if shape(f['geometry']).buffer(0).contains(pt): fs=[f]; names=[f['properties']['ADMIN']]; break
+            except Exception: pass
     cams.append((cx,cy,span)); hls.append((names,fs))
 narrow=[c for c in cams if c[2]<=45]
 paths_d=''
@@ -151,10 +158,11 @@ txt_all=(sc.get('title','')+' '+' '.join(s.get('vo','') for s in sc['scenes'])).
 osm_svg=''
 if 'suez' in LINES and ('السويس' in txt_all or 'suez' in txt_all):
     osm_svg=''.join('<path class="cn" pathLength="1" d="M'+' L'.join('%.1f,%.1f'%(X(p[0]),Y(p[1])) for p in ln)+'"/>' for ln in LINES['suez'])
+lpins=''.join('<circle id="lp%d_%d" cx="%.1f" cy="%.1f" r="0" class="pin"/>'%(i,k,X(float(lb['lon'])),Y(float(lb['lat']))) for i,s_ in enumerate(sc['scenes']) for k,lb in enumerate((s_.get('labels') or [])[:2]) if isinstance(lb,dict) and lb.get('text') and isinstance(lb.get('lon'),(int,float)) and isinstance(lb.get('lat'),(int,float)) and -180<=lb['lon']<=180 and -90<=lb['lat']<=90)
 pins=''.join('<circle id="pin%d" cx="%.1f" cy="%.1f" r="0" class="pin"/>'%(i,X(c[0]),Y(c[1])) for i,c in enumerate(cams) if c[2]<12)
 Wm=360*S; Hm=180*S
 svg=(f'<svg id="map" width="1080" height="1920" viewBox="0 0 {Wm} {Hm}" preserveAspectRatio="xMidYMid slice"><rect x="-30000" y="-30000" width="{Wm+60000}" height="{Hm+60000}" fill="#17335c"/>'
-     f'<path class="c" d="{base_d}"/><path class="c" d="{paths_d}"/>{"".join(hl_groups)}{osm_svg}{arrows_svg}{pins}</svg>')
+     f'<path class="c" d="{base_d}"/><path class="c" d="{paths_d}"/>{"".join(hl_groups)}{osm_svg}{arrows_svg}{pins}{lpins}</svg>')
 
 
 # 4. characters
@@ -224,6 +232,7 @@ for i,s in enumerate(sc['scenes']):
     nw=len(s['vo'].split())
     for j in range(nw): html+=f'tl.set("#w{i}_{j}",{{className:"on"}},{t0+d*j/nw:.2f});tl.set("#w{i}_{j}",{{className:""}},{t0+d*(j+1)/nw:.2f});\n'
     for k in range(2):
+        if (i,k) in labpos and ('id="lp%d_%d"'%(i,k)) in svg: html+=f'tl.to("#lp{i}_{k}",{{attr:{{r:{max(cams[i][2]*S*0.012,40):.1f}}},duration:.4}},{t0+.3+k*.8:.2f}).to("#lp{i}_{k}",{{attr:{{r:0}},duration:.2}},{t0+d+GAP-.1:.2f});\n'
         if (i,k) in labpos: html+=f'tl.to("#l{i}_{k}",{{opacity:1,duration:.3}},{t0+.3+k*.8:.2f}).to("#l{i}_{k}",{{opacity:0,duration:.2}},{t0+d+GAP-.1:.2f});\n'
     for k in range(3):
         if s.get('arrows') and k<len(s['arrows']) and k<3: html+=f'tl.to("#ar{i}_{k}",{{strokeDasharray:"1 0",duration:{min(2.2,d):.2f},ease:"none"}},{t0+.2+k*.4:.2f}).to("#ar{i}_{k}",{{opacity:0,duration:.2}},{t0+d+GAP-.1:.2f});\n'
