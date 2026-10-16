@@ -217,6 +217,15 @@ try:
                 if ok: _keep.append(_l)
                 else: print('label dropped far from topic centre',_l.get('text'))
             _s['labels']=_keep
+            if not globals().get('MULTI'):
+                _kc=[]
+                for _n in (_s.get('countries') or []):
+                    _f=find(W110,_n) if isinstance(_n,str) else None
+                    if _f:
+                        _b=mainbbox(_f)
+                        if math.hypot((_b[0]+_b[2])/2-_mx,(_b[1]+_b[3])/2-_my)>50: print('country dropped far from topic centre',_n); continue
+                    _kc.append(_n)
+                if len(_kc)!=len(s_c if (s_c:=(_s.get('countries') or [])) else []): _s['countries']=_kc
 except Exception as _e: print('centre guard fail',_e)
 cams=[];hls=[];GEOS=[];_last=None;_dflt=False
 for i,s in enumerate(sc['scenes']):
