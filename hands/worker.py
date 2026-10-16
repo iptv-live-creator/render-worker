@@ -82,6 +82,13 @@ def t_blender_render(a, d, jid):
         if v is not None:
             if not isinstance(v, str) or not re.match(r"^[a-z0-9_]{2,50}$", v): raise ValueError("bad " + k)
             spec[k] = v
+    pr = a.get("props")
+    if pr is not None:
+        if not isinstance(pr, list) or len(pr) > 6: raise ValueError("bad props")
+        spec["props"] = []
+        for p in pr:
+            if not isinstance(p, dict) or not isinstance(p.get("id"), str) or not re.match(r"^[a-z0-9_]{2,50}$", p["id"]): raise ValueError("bad prop id")
+            spec["props"].append({"id": p["id"], "x": num(p, "x", -2.3, 2.3, 0), "y": num(p, "y", -2.3, 2.3, 0), "rz": num(p, "rz", -360, 360, 0)})
     (d / "spec.json").write_text(json.dumps(spec, ensure_ascii=False))
     exe = os.environ.get("BLENDER", "blender"); frames = d / "frames"
     code, why, tail = run([exe, "-b", "-noaudio", "-P", str(HERE / "blender" / (tpl + ".py")), "--", str(d / "spec.json"), str(frames if tpl == "room_bedroom" else d / "out.png")], d, 1500, jid)
