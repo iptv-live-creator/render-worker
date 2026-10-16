@@ -101,6 +101,28 @@ def resolve_geo(g):
     except Exception as e: print('geo fail',nm,e)
     GEO_CACHE[(nm,typ)]=out; print('geo',nm,typ,'->',out[0] if out else None); return out
 SH=[1.9,1.0,0.55,1.3,0.45,2.2,1.0,0.6]
+# label coordinates are re-checked against a geocode of the label text: a place name whose planner coordinates are far off gets the real position
+def _geopt(txt):
+    import urllib.request,urllib.parse,time
+    try:
+        time.sleep(1.1)
+        u='https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=ar&q='+urllib.parse.quote(txt)
+        r=json.load(urllib.request.urlopen(urllib.request.Request(u,headers={'User-Agent':'atlas-render-worker/1.0'}),timeout=20))
+        if r and r[0].get('class') in ('place','boundary') and r[0].get('type') in ('city','town','village','administrative','state','county','island','suburb','municipality','region','country','peninsula'):
+            return float(r[0]['lon']),float(r[0]['lat'])
+    except Exception as e: print('label geocode fail',txt,e)
+    return None
+try:
+    _seen={}
+    for _s in sc['scenes']:
+        for _l in (_s.get('labels') or []):
+            _t=str(_l.get('text','')).strip()
+            if not _t or not isinstance(_l.get('lon'),(int,float)): continue
+            if _t not in _seen: _seen[_t]=_geopt(_t)
+            _p=_seen[_t]
+            if _p and math.hypot(_p[0]-_l['lon'],_p[1]-_l['lat'])>8:
+                print('label moved to geocode',_t,(_l['lon'],_l['lat']),'->',_p); _l['lon'],_l['lat']=_p
+except Exception as _e: print('label geocode guard fail',_e)
 # planner coordinate sanity: drop labels far from the topic's centre of mass
 try:
     import statistics as _st
