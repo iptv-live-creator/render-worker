@@ -190,6 +190,7 @@ try:
             _p=_seen[_t]
             if _p and math.hypot(_p[0]-_l['lon'],_p[1]-_l['lat'])>8:
                 print('label moved to geocode',_t,(_l['lon'],_l['lat']),'->',_p); _l['lon'],_l['lat']=_p
+            if _p is None and re.search(r'(^|\s)(شمال|جنوب|شرق|غرب|ال?ممالك|مملكة|قبائل|تبادل|صراع|حضارة|ثقافة|علم|عمارة|فتح|غزو|حرب)(\s|$)',_t): _l['_abstract']=True; print('concept label dropped (not a geocodable place)',_t)
             if _p is None and globals().get('MULTI'):
                 _l['_abstract']=True
         for _s in sc['scenes']:
