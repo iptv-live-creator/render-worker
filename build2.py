@@ -148,13 +148,15 @@ try:
     for _s in sc['scenes']: _allc|=_mentioned(_s.get('vo',''))
     MULTI=len(_allc)>=3
     if MULTI:
+        _ma=set()
+        for _s in sc['scenes']: _ma|=_mentioned(_s.get('vo',''))
         for _s in sc['scenes']:
             _m=_mentioned(_s.get('vo',''))
             _old=[n for n in (_s.get('countries') or []) if isinstance(n,str)]
             _new=[n for n in _old if key(n) in _m]
             _extra=[f['properties']['NAME'] for f in W10 if key(f['properties'].get('NAME')) in _m and key(f['properties']['NAME']) not in {key(x) for x in _new}][:4]
             _new=(_new+_extra)[:4]
-            if not _m: _new=_old   # sentence names no country: keep the planner's choice
+            if not _m: _new=[n for n in _old if key(n) in _ma] if _ma else _old   # sentence names no country: keep only planner countries some sentence names
             if _new!=_old: print('countries by sentence',_old,'->',_new)
             _s['countries']=_new
             if not _new: _s['geo']=[]; _s['nocountry']=True
