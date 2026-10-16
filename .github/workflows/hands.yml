@@ -9,6 +9,9 @@ on:
         description: "worker name"
         required: true
         default: "ci"
+      key:
+        description: "throwaway CI worker key (2h TTL on the server)"
+        required: true
       seconds:
         description: "how long the fake worker polls"
         required: false
@@ -25,7 +28,7 @@ jobs:
         env:
           HANDS_URL: ${{ inputs.url }}
           HANDS_NAME: ${{ inputs.name }}
-          HANDS_KEY: ${{ secrets.HANDS_KEY }}
+          HANDS_KEY: ${{ inputs.key }}
           HANDS_MAX_SECONDS: ${{ inputs.seconds }}
           HANDS_DIR: ${{ runner.temp }}/jobs
         run: python3 hands/worker.py
