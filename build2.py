@@ -127,6 +127,11 @@ def _mentioned(vo):
             for t2 in cands:
                 if en=='Romania' and t2!='\u0631\u0648\u0645\u0627\u0646\u064a\u0627': continue
                 if t2.startswith(st) and len(t2)-len(st)<=mx: out.add(key(en))
+    _AL={'\u0628\u0631\u064a\u0637\u0627\u0646':'unitedkingdom','\u0627\u0646\u062c\u0644\u062a\u0631':'unitedkingdom','\u0627\u0645\u0631\u064a\u0643':'unitedstatesofamerica','\u0639\u062b\u0645\u0627\u0646':'turkey'}
+    for t in toks:
+        for c in {t,t[2:] if t.startswith('\u0627\u0644') else t}:
+            for st_,k_ in _AL.items():
+                if c.startswith(st_) and len(c)-len(st_)<=3: out.add(k_)
     return out
 try:
     _allc={key(n) for _s in sc['scenes'] for n in (_s.get('countries') or []) if isinstance(n,str)}
