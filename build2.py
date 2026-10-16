@@ -126,7 +126,7 @@ def _mentioned(vo):
                 if c.startswith('\u0627\u0644'): cands.add(c[2:])
             for t2 in cands:
                 if en=='Romania' and t2!='\u0631\u0648\u0645\u0627\u0646\u064a\u0627': continue
-                if t2.startswith(st) and len(t2)-len(st)<=mx: out.add(key(en))
+                if t2.startswith(st) and len(t2)-len(st)<=mx and (len(st)>3 or t2[len(st):] in ('','\u064a','\u064a\u0647','\u064a\u064a\u0646','\u064a\u0646','\u0627\u0646')): out.add(key(en))
     _AL={'\u0628\u0631\u064a\u0637\u0627\u0646':'unitedkingdom','\u0627\u0646\u062c\u0644\u062a\u0631':'unitedkingdom','\u0627\u0645\u0631\u064a\u0643':'unitedstatesofamerica','\u0639\u062b\u0645\u0627\u0646':'turkey'}
     for t in toks:
         _cs={t}
@@ -150,6 +150,14 @@ try:
             if _new!=_old: print('countries by sentence',_old,'->',_new)
             _s['countries']=_new
             if not _new: _s['geo']=[]
+        _cnt={}
+        for _s in sc['scenes']:
+            for n in (_s.get('countries') or []): _cnt[n]=_cnt.get(n,0)+1
+        _top=[n for n,_ in sorted(_cnt.items(),key=lambda z:-z[1])][:4]
+        if _top:
+            for _s in sc['scenes']:
+                if not _s.get('countries'):
+                    _s['countries']=list(_top); _s['labels']=[]; _s['arrows']=[]; _s['geo']=[]; _s['focus']=None; print('scene without named country frames topic countries',_top)
 except Exception as _e: print('sentence-country guard fail',_e)
 # label coordinates are re-checked against a geocode of the label text: a place name whose planner coordinates are far off gets the real position
 def _geopt(txt):
