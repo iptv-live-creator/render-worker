@@ -510,8 +510,8 @@ for i,s in enumerate(sc['scenes']):
     for k,lb in enumerate((s.get('labels') or [])[:2]):
         if not isinstance(lb,dict) or not lb.get('text'): continue
         px,py=snap(i,lb); px=min(900,max(180,px)); py=min(1000,max(260,py))
-        for (qx,qy) in placed:
-            if abs(py-qy)<110 and abs(px-qx)<420: py=qy+120 if qy+120<1000 else qy-120
+        _clash = any(abs(py-qy)<110 and abs(px-qx)<420 for (qx,qy) in placed)
+        if _clash: print('label dropped: would overlap another label (never shift a label off its pin)',lb.get('text')); continue
         placed.append((px,py)); labpos[(i,k)]=1; labpos_xy.setdefault(i,[]).append((px,py))
         html+=f'<div id="l{i}_{k}" class="lab clip" data-start="0" data-duration="{TOT}" data-track-index="{40+i*2+k}" style="left:{px:.0f}px;top:{py:.0f}px">{lb["text"]}</div>\n'
 NB={}
