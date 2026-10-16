@@ -76,7 +76,7 @@ def t_blender_render(a, d, jid):
     tpl = a.get("template", "title_card")
     if tpl not in ("title_card", "room_bedroom"): raise ValueError("unknown template")
     spec = {"text": str(a.get("text", ""))[:80], "frames": int(num(a, "frames", 1, 240, 1)), "res": [int(num(a, "width", 160, 1920, 640)), int(num(a, "height", 90, 1080, 360))],
-            "samples": int(num(a, "samples", 1, 256, 24)), "gpu": bool(a.get("gpu")), "palette": a.get("palette", "warm") if a.get("palette") in ("warm", "cool") else "warm"}
+            "samples": int(num(a, "samples", 1, 256, 24)), "gpu": bool(a.get("gpu")), "denoise": bool(a.get("denoise")), "palette": a.get("palette", "warm") if a.get("palette") in ("warm", "cool") else "warm"}
     for k in ("hdri", "floor_tex"):
         v = a.get(k)
         if v is not None:

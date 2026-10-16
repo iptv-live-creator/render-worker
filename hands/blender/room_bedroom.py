@@ -20,9 +20,10 @@ def ph_file(kind, aid, res="1k"):
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 sc = bpy.context.scene; W, Hh = spec["res"]; sc.render.resolution_x, sc.render.resolution_y = W, Hh
-sc.render.engine = "CYCLES"; sc.cycles.samples = spec.get("samples", 24); sc.cycles.use_denoising = True
-try: sc.cycles.denoiser = "OPENIMAGEDENOISE"
-except Exception: pass
+sc.render.engine = "CYCLES"; sc.cycles.samples = spec.get("samples", 24); sc.cycles.use_denoising = bool(spec.get("denoise"))
+if spec.get("denoise"):
+    try: sc.cycles.denoiser = "OPENIMAGEDENOISE"
+    except Exception: pass
 if spec.get("gpu"):
     try:
         pr = bpy.context.preferences.addons["cycles"].preferences
