@@ -308,7 +308,7 @@ for i,s in enumerate(sc['scenes']):
     span=max(5,min(160,span))
     if pts or fok: _last=(cx,cy,span)
     vis=span/AR; cy=max(-90+vis/2,min(90-vis/2,cy)) if vis<180 else 15
-    if not fs and not geos and not s.get('nocountry'):
+    if not fs and not geos and not s.get('nocountry') and (pts or fok) and not _dflt:
         from shapely.geometry import Point
         pt=Point(cx,cy)
         for f in W110:
