@@ -74,13 +74,26 @@ def t_ffmpeg_convert(a, d, jid):
 
 def t_blender_render(a, d, jid):
     tpl = a.get("template", "title_card")
-    if tpl not in ("title_card",): raise ValueError("unknown template")
-    spec = {"text": str(a.get("text", ""))[:80], "frames": int(num(a, "frames", 1, 240, 1)), "res": [int(num(a, "width", 160, 1920, 640)), int(num(a, "height", 90, 1080, 360))]}
+    if tpl not in ("title_card", "room_bedroom"): raise ValueError("unknown template")
+    spec = {"text": str(a.get("text", ""))[:80], "frames": int(num(a, "frames", 1, 240, 1)), "res": [int(num(a, "width", 160, 1920, 640)), int(num(a, "height", 90, 1080, 360))],
+            "samples": int(num(a, "samples", 1, 256, 24)), "gpu": bool(a.get("gpu")), "palette": a.get("palette", "warm") if a.get("palette") in ("warm", "cool") else "warm"}
+    for k in ("hdri", "floor_tex"):
+        v = a.get(k)
+        if v is not None:
+            if not isinstance(v, str) or not re.match(r"^[a-z0-9_]{2,50}$", v): raise ValueError("bad " + k)
+            spec[k] = v
     (d / "spec.json").write_text(json.dumps(spec, ensure_ascii=False))
-    out = inside(d, "out.png")
-    exe = os.environ.get("BLENDER", "blender")
-    code, why, tail = run([exe, "-b", "-noaudio", "-P", str(HERE / "blender" / (tpl + ".py")), "--", str(d / "spec.json"), str(out)], d, 1200, jid)
-    return {"exit": code, "tail": tail, "reason": why}, (out if code == 0 and out.exists() else None)
+    exe = os.environ.get("BLENDER", "blender"); frames = d / "frames"
+    code, why, tail = run([exe, "-b", "-noaudio", "-P", str(HERE / "blender" / (tpl + ".py")), "--", str(d / "spec.json"), str(frames if tpl == "room_bedroom" else d / "out.png")], d, 1500, jid)
+    if code != 0 or why: return {"exit": code, "tail": tail, "reason": why}, None
+    if tpl == "title_card": return {"exit": 0, "tail": tail}, (d / "out.png")
+    ass = ""
+    try: ass = (d / "assets.json").read_text()[:600]
+    except Exception: pass
+    if spec["frames"] == 1: return {"exit": 0, "tail": tail, "info": ass}, (frames / "f_0001.png")
+    out = d / "out.mp4"
+    code, why, t2 = run(["ffmpeg", "-y", "-framerate", "24", "-i", str(frames / "f_%04d.png"), "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", str(out)], d, 600, jid)
+    return {"exit": code, "tail": t2, "reason": why, "info": ass}, (out if code == 0 else None)
 
 TOOLS = {"probe": t_probe, "ffmpeg_testsrc": t_ffmpeg_testsrc, "ffmpeg_convert": t_ffmpeg_convert, "blender_render": t_blender_render}
 
