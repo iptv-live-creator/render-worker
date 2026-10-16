@@ -176,7 +176,7 @@ def _geopt(txt):
         time.sleep(1.1)
         u='https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=ar&q='+urllib.parse.quote(txt)
         r=json.load(urllib.request.urlopen(urllib.request.Request(u,headers={'User-Agent':'atlas-render-worker/1.0'}),timeout=20))
-        if r and (lambda a_,b_: a_ and b_ and (a_ in b_ or b_ in a_))(re.sub(r'[^\w]','',_nrm(r[0].get('name',''))),re.sub(r'[^\w]','',_nrm(txt))) and r[0].get('class') in ('place','boundary') and r[0].get('type') in ('city','town','village','administrative','state','county','island','suburb','municipality','region','country','peninsula'):
+        if r and (lambda a_,b_: a_ and b_ and (a_ in b_ or b_ in a_))(re.sub(r'[^\w]','',_nrm(r[0].get('name',''))),re.sub(r'[^\w]','',_nrm(txt))) and ((r[0].get('class') in ('place','boundary') and r[0].get('type') in ('city','town','village','administrative','state','county','island','suburb','municipality','region','country','peninsula')) or (r[0].get('class')=='natural' and r[0].get('type') in ('peak','volcano'))):
             return float(r[0]['lon']),float(r[0]['lat'])
     except Exception as e: print('label geocode fail',txt,e)
     return None
@@ -195,6 +195,28 @@ try:
         for _s in sc['scenes']:
             _s['labels']=[l for l in (_s.get('labels') or []) if not l.get('_abstract')]
 except Exception as _e: print('label geocode guard fail',_e)
+# a label pinned in open water (more than 1.5 degrees from any land) is dropped unless its text is about water
+try:
+    from shapely.geometry import Point as _P, box as _bx
+    _LAND=[(shape(f['geometry']).buffer(0),mainbbox(f)) for f in W110]
+    _lands=[g for g,_ in _LAND]
+    def _nearland(x,y):
+        p=_P(x,y)
+        for g in _lands:
+            gb=g.bounds
+            if gb[0]-1.6<=x<=gb[2]+1.6 and gb[1]-1.6<=y<=gb[3]+1.6 and g.distance(p)<=1.5: return True
+        return False
+    for _s in sc['scenes']:
+        _k=[]
+        for _l in (_s.get('labels') or []):
+            try:
+                x,y=float(_l['lon']),float(_l['lat'])
+                if not re.search(r'بحر|خليج|محيط|مضيق|قناة|نهر|جزير|جزر|ممر|بحيره|بحيرة|ساحل|شاطئ',str(_l.get('text',''))) and not _nearland(x,y):
+                    print('label in open water dropped',_l.get('text'),(x,y)); continue
+            except Exception: pass
+            _k.append(_l)
+        _s['labels']=_k
+except Exception as _e: print('open-water guard fail',_e)
 # planner coordinate sanity: drop labels far from the topic's centre of mass
 try:
     import statistics as _st
