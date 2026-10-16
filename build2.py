@@ -67,6 +67,9 @@ def fkeys(f):
 def find(feats,name):
     k=key(name); k=ALIAS.get(k,k)
     for f in feats:
+        p=f['properties']
+        if k in {key(p.get(x)) for x in ('ADMIN','NAME','NAME_LONG') if p.get(x)}: return f
+    for f in feats:
         if k in fkeys(f): return f
     return None
 def mainbbox(f):
@@ -140,7 +143,9 @@ def _mentioned(vo):
     return out
 try:
     _allc={key(n) for _s in sc['scenes'] for n in (_s.get('countries') or []) if isinstance(n,str)}
-    if len(_allc)>=3:
+    for _s in sc['scenes']: _allc|=_mentioned(_s.get('vo',''))
+    MULTI=len(_allc)>=3
+    if MULTI:
         for _s in sc['scenes']:
             _m=_mentioned(_s.get('vo',''))
             _old=[n for n in (_s.get('countries') or []) if isinstance(n,str)]
@@ -180,6 +185,10 @@ try:
             _p=_seen[_t]
             if _p and math.hypot(_p[0]-_l['lon'],_p[1]-_l['lat'])>8:
                 print('label moved to geocode',_t,(_l['lon'],_l['lat']),'->',_p); _l['lon'],_l['lat']=_p
+            if _p is None and globals().get('MULTI'):
+                _l['_abstract']=True
+        for _s in sc['scenes']:
+            _s['labels']=[l for l in (_s.get('labels') or []) if not l.get('_abstract')]
 except Exception as _e: print('label geocode guard fail',_e)
 # planner coordinate sanity: drop labels far from the topic's centre of mass
 try:
