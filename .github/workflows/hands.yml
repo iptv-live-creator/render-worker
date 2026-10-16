@@ -1,0 +1,31 @@
+name: hands-test
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "bot base url"
+        required: true
+      name:
+        description: "worker name"
+        required: true
+        default: "ci"
+      seconds:
+        description: "how long the fake worker polls"
+        required: false
+        default: "420"
+jobs:
+  worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: deps
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg blender
+      - name: run fake ASUS
+        env:
+          HANDS_URL: ${{ inputs.url }}
+          HANDS_NAME: ${{ inputs.name }}
+          HANDS_KEY: ${{ secrets.HANDS_KEY }}
+          HANDS_MAX_SECONDS: ${{ inputs.seconds }}
+          HANDS_DIR: ${{ runner.temp }}/jobs
+        run: python3 hands/worker.py
