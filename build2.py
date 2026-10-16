@@ -146,7 +146,8 @@ def _mentioned(vo):
 try:
     _allc={key(n) for _s in sc['scenes'] for n in (_s.get('countries') or []) if isinstance(n,str)}
     for _s in sc['scenes']: _allc|=_mentioned(_s.get('vo',''))
-    MULTI=len(_allc)>=3
+    MULTI=len(_allc)>=3 and not all(_s.get('nocountry') for _s in sc['scenes'])
+    print('MULTI',MULTI,'allnocountry',all(_s.get('nocountry') for _s in sc['scenes']))
     if MULTI:
         _ma=set()
         for _s in sc['scenes']: _ma|=_mentioned(_s.get('vo',''))
@@ -180,6 +181,13 @@ def _geopt(txt):
             return float(r[0]['lon']),float(r[0]['lat'])
     except Exception as e: print('label geocode fail',txt,e)
     return None
+_TOPICBB=[]
+try:
+    for _s in sc['scenes']:
+        for _n in (_s.get('countries') or []):
+            _f=find(W110,_n) if isinstance(_n,str) else None
+            if _f: _TOPICBB.append(mainbbox(_f))
+except Exception as _e: print('topicbb fail',_e)
 try:
     _seen={}
     for _s in sc['scenes']:
@@ -188,6 +196,8 @@ try:
             if not _t or not isinstance(_l.get('lon'),(int,float)): continue
             if _t not in _seen: _seen[_t]=_geopt(_t)
             _p=_seen[_t]
+            if _p and math.hypot(_p[0]-_l['lon'],_p[1]-_l['lat'])>8 and _TOPICBB and not any(bb[0]-3<=_p[0]<=bb[2]+3 and bb[1]-3<=_p[1]<=bb[3]+3 for bb in _TOPICBB):
+                print('geocode outside topic countries, kept planner coords',_t,_p); _p=None
             if _p and math.hypot(_p[0]-_l['lon'],_p[1]-_l['lat'])>8:
                 print('label moved to geocode',_t,(_l['lon'],_l['lat']),'->',_p); _l['lon'],_l['lat']=_p
             if _p is None and re.search(r'(^|\s)(شمال|جنوب|شرق|غرب|ال?ممالك|مملكة|قبائل|تبادل|صراع|حضارة|ثقافة|علم|عمارة|فتح|غزو|حرب)(\s|$)',_t): _l['_abstract']=True; print('concept label dropped (not a geocodable place)',_t)
