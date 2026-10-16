@@ -130,7 +130,7 @@ def _mentioned(vo):
             for t2 in cands:
                 if en=='Romania' and t2!='\u0631\u0648\u0645\u0627\u0646\u064a\u0627': continue
                 if t2.startswith(st) and len(t2)-len(st)<=mx and (len(st)>3 or t2[len(st):] in ('','\u064a','\u064a\u0647','\u064a\u064a\u0646','\u064a\u0646','\u0627\u0646')): out.add(key(en))
-    _AL={'\u0628\u0631\u064a\u0637\u0627\u0646':'unitedkingdom','\u0627\u0646\u062c\u0644\u062a\u0631':'unitedkingdom','\u0627\u0645\u0631\u064a\u0643':'unitedstatesofamerica','\u0639\u062b\u0645\u0627\u0646':'turkey'}
+    _AL={'\u0628\u0631\u064a\u0637\u0627\u0646':'unitedkingdom','\u0627\u0646\u062c\u0644\u062a\u0631':'unitedkingdom','\u0627\u0645\u0631\u064a\u0643':'unitedstatesofamerica','\u0639\u062b\u0645\u0627\u0646':'turkey','\u0633\u0648\u0641\u064a':'russia','\u0643\u0648\u0631\u064a':'southkorea'}
     for t in toks:
         _cs={t}
         for _p in '\u0648\u0628\u0644\u0641\u0643':
@@ -139,7 +139,9 @@ def _mentioned(vo):
             if _c.startswith('\u0627\u0644'): _cs.add(_c[2:])
         for c in _cs:
             for st_,k_ in _AL.items():
-                if c.startswith(st_) and len(c)-len(st_)<=3: out.add(k_)
+                if c.startswith(st_) and len(c)-len(st_)<=3:
+                    out.add(k_)
+                    if k_=='southkorea': out.add('northkorea')
     return out
 try:
     _allc={key(n) for _s in sc['scenes'] for n in (_s.get('countries') or []) if isinstance(n,str)}
@@ -152,9 +154,10 @@ try:
             _new=[n for n in _old if key(n) in _m]
             _extra=[f['properties']['NAME'] for f in W10 if key(f['properties'].get('NAME')) in _m and key(f['properties']['NAME']) not in {key(x) for x in _new}][:4]
             _new=(_new+_extra)[:4]
+            if not _m: _new=_old   # sentence names no country: keep the planner's choice
             if _new!=_old: print('countries by sentence',_old,'->',_new)
             _s['countries']=_new
-            if not _new: _s['geo']=[]
+            if not _new: _s['geo']=[]; _s['nocountry']=True
         _cnt={}
         for _s in sc['scenes']:
             for n in (_s.get('countries') or []): _cnt[n]=_cnt.get(n,0)+1
@@ -171,7 +174,7 @@ def _geopt(txt):
         time.sleep(1.1)
         u='https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=ar&q='+urllib.parse.quote(txt)
         r=json.load(urllib.request.urlopen(urllib.request.Request(u,headers={'User-Agent':'atlas-render-worker/1.0'}),timeout=20))
-        if r and r[0].get('class') in ('place','boundary') and r[0].get('type') in ('city','town','village','administrative','state','county','island','suburb','municipality','region','country','peninsula'):
+        if r and (lambda a_,b_: a_ and b_ and (a_ in b_ or b_ in a_))(re.sub(r'[^\w]','',_nrm(r[0].get('name',''))),re.sub(r'[^\w]','',_nrm(txt))) and r[0].get('class') in ('place','boundary') and r[0].get('type') in ('city','town','village','administrative','state','county','island','suburb','municipality','region','country','peninsula'):
             return float(r[0]['lon']),float(r[0]['lat'])
     except Exception as e: print('label geocode fail',txt,e)
     return None
