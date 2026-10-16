@@ -101,6 +101,46 @@ def resolve_geo(g):
     except Exception as e: print('geo fail',nm,e)
     GEO_CACHE[(nm,typ)]=out; print('geo',nm,typ,'->',out[0] if out else None); return out
 SH=[1.9,1.0,0.55,1.3,0.45,2.2,1.0,0.6]
+# code-driven countries for multi-country topics: a scene highlights only the countries its own sentence names
+def _nrm(t):
+    t=re.sub(r'[\u064b-\u065f\u0640]','',t or ''); t=re.sub(r'[\u0623\u0625\u0622]','\u0627',t)
+    return t.replace('\u0649','\u064a').replace('\u0629','\u0647')
+def _mentioned(vo):
+    toks=re.findall(r'[\u0621-\u064a]+',_nrm(vo)); text=' '.join(toks); out=set()
+    for f in W10:
+        p=f['properties']; ar=(p.get('NAME_AR') or '').strip(); en=p.get('NAME')
+        if not ar or not en: continue
+        n=_nrm(ar); art=ar.startswith('\u0627\u0644')
+        if ' ' in ar:
+            if n in text: out.add(key(en))
+            continue
+        st=n[2:] if art else n
+        st=re.sub(r'[\u0627\u0647\u064a]$','',st) if len(st)>4 else st
+        if len(st)<3: continue
+        mx=1 if len(st)<=3 else 2
+        for t in toks:
+            cands={t}
+            for pre in '\u0648\u0628\u0644\u0641\u0643':
+                if t.startswith(pre): cands.add(t[1:])
+            for c in list(cands):
+                if c.startswith('\u0627\u0644'): cands.add(c[2:])
+            for t2 in cands:
+                if en=='Romania' and t2!='\u0631\u0648\u0645\u0627\u0646\u064a\u0627': continue
+                if t2.startswith(st) and len(t2)-len(st)<=mx: out.add(key(en))
+    return out
+try:
+    _allc={key(n) for _s in sc['scenes'] for n in (_s.get('countries') or []) if isinstance(n,str)}
+    if len(_allc)>=3:
+        for _s in sc['scenes']:
+            _m=_mentioned(_s.get('vo',''))
+            _old=[n for n in (_s.get('countries') or []) if isinstance(n,str)]
+            _new=[n for n in _old if key(n) in _m]
+            _extra=[f['properties']['NAME'] for f in W10 if key(f['properties'].get('NAME')) in _m and key(f['properties']['NAME']) not in {key(x) for x in _new}][:4]
+            _new=(_new+_extra)[:4]
+            if _new!=_old: print('countries by sentence',_old,'->',_new)
+            _s['countries']=_new
+            if not _new: _s['geo']=[]
+except Exception as _e: print('sentence-country guard fail',_e)
 # label coordinates are re-checked against a geocode of the label text: a place name whose planner coordinates are far off gets the real position
 def _geopt(txt):
     import urllib.request,urllib.parse,time
