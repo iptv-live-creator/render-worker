@@ -129,7 +129,12 @@ def _mentioned(vo):
                 if t2.startswith(st) and len(t2)-len(st)<=mx: out.add(key(en))
     _AL={'\u0628\u0631\u064a\u0637\u0627\u0646':'unitedkingdom','\u0627\u0646\u062c\u0644\u062a\u0631':'unitedkingdom','\u0627\u0645\u0631\u064a\u0643':'unitedstatesofamerica','\u0639\u062b\u0645\u0627\u0646':'turkey'}
     for t in toks:
-        for c in {t,t[2:] if t.startswith('\u0627\u0644') else t}:
+        _cs={t}
+        for _p in '\u0648\u0628\u0644\u0641\u0643':
+            if t.startswith(_p): _cs.add(t[1:])
+        for _c in list(_cs):
+            if _c.startswith('\u0627\u0644'): _cs.add(_c[2:])
+        for c in _cs:
             for st_,k_ in _AL.items():
                 if c.startswith(st_) and len(c)-len(st_)<=3: out.add(k_)
     return out
