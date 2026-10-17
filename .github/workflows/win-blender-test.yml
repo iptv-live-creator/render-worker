@@ -1,0 +1,35 @@
+name: win-blender-test
+on:
+  workflow_dispatch:
+jobs:
+  win:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Blender 5.2.2 portable from download.blender.org (hash-checked)
+        shell: powershell
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'sw'; New-Item -ItemType Directory -Force -Path $root | Out-Null
+          $zip = Join-Path $env:RUNNER_TEMP 'b.zip'
+          Invoke-WebRequest 'https://download.blender.org/release/Blender5.2/blender-5.2.2-windows-x64.zip' -OutFile $zip
+          $h = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower(); $h
+          if ($h -ne '3849d17a682cba006075aaa3f3597ecb5c9c30ec31035b2e092c53e40679b535') { throw 'blender hash mismatch' }
+          Expand-Archive $zip -DestinationPath (Join-Path $env:RUNNER_TEMP 'bx') -Force
+          $d = Get-ChildItem (Join-Path $env:RUNNER_TEMP 'bx') | Select-Object -First 1
+          Move-Item $d.FullName (Join-Path $root 'blender')
+          Copy-Item laptop\worker.py, laptop\ed25519_verify.py $root
+      - name: blender_version + fixed blender_test job
+        shell: powershell
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'sw'
+          $code = "import sys,pathlib,json,os; sys.path.insert(0, r'$root'); import worker; print('VERSION', worker.VERSION, 'blender', worker.blender_version(r'$root')); jd=pathlib.Path(r'$root','jobs','t'); jd.mkdir(parents=True,exist_ok=True); r=worker.blender_test(r'$root', jd); print(json.dumps(r)[:600]); print('files in job dir:', sorted(os.listdir(jd))); sys.exit(0 if r.get('ok') and r.get('png') else 1)"
+          python -c $code
+          if ($LASTEXITCODE -ne 0) { throw 'blender_test failed' }
+      - name: Not-found path is clean
+        shell: powershell
+        run: |
+          $e = Join-Path $env:RUNNER_TEMP 'empty'; New-Item -ItemType Directory -Force -Path $e | Out-Null
+          $code = "import sys,pathlib,json; sys.path.insert(0, r'laptop'); import worker; os=__import__('os'); os.environ.pop('ProgramFiles',None); os.environ.pop('LOCALAPPDATA',None); jd=pathlib.Path(r'$e','j'); jd.mkdir(exist_ok=True); print(worker.blender_version(r'$e'), json.dumps(worker.blender_test(r'$e', jd)))"
+          python -c $code

@@ -5,8 +5,8 @@ Usage: worker.py --enroll CODE --bot URL --root DIR   (one time)
 import argparse, base64, re, hashlib, hmac, json, os, subprocess, sys, time, urllib.request, urllib.error, shutil, pathlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-ALLOWED = {"render", "browser_task", "wan_generate", "blender", "ping", "ffmpeg_test", "nvenc_test"}
-VERSION = 2
+ALLOWED = {"render", "browser_task", "wan_generate", "blender", "ping", "ffmpeg_test", "nvenc_test", "blender_test"}
+VERSION = 3
 POLL_SECS = 20
 RESTART_CODE = 75
 # Release signing PUBLIC key (Ed25519). The private key is not on the bot server and not on this PC.
@@ -43,6 +43,7 @@ def run_job(a, job):
         if t == "ping": return {"ok": True, "pong": time.time()}
         if t == "ffmpeg_test": return ffmpeg_test(a.root, jd)
         if t == "nvenc_test": return nvenc_test(a.root, jd)
+        if t == "blender_test": return blender_test(a.root, jd)
         if t == "render": return {"ok": False, "error": "render handler not implemented yet"}
         if t == "browser_task": return {"ok": False, "error": "browser_task handler not implemented yet"}
         if t == "wan_generate": return {"ok": False, "error": "WanGP not installed (needs Shaher's approval)"}
@@ -112,7 +113,7 @@ def loop(a):
             if a.supervised and time.time() - last_upd > UPDATE_EVERY:
                 last_upd = time.time(); st, det = check_update(a.root, a.bot); log(a.root, "update check: %s %s" % (st, det))
                 if st == "applied": log(a.root, "restarting into new release"); sys.exit(RESTART_CODE)
-            r = http(a.bot, "/worker/poll", token=tok, body={"gpu": gpu_info(), "v": VERSION, "seq": current_seq(a.root), "supervised": bool(a.supervised), "ffmpeg": bool(find_ffmpeg(a.root))})
+            r = http(a.bot, "/worker/poll", token=tok, body={"gpu": gpu_info(), "v": VERSION, "seq": current_seq(a.root), "supervised": bool(a.supervised), "ffmpeg": bool(find_ffmpeg(a.root)), "blender": blender_version(a.root)})
             if a.supervised: mark_healthy(a.root)
             job = r.get("job")
             if job:
@@ -161,6 +162,58 @@ def nvenc_test(root, jd):
     if r.returncode != 0 or not out.exists(): return {"ok": False, "encode_sec": sec, "error": "nvenc failed: " + (r.stderr or "")[:400]}
     data = out.read_bytes()
     return {"ok": True, "encode_sec": sec, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(), "gpu": gpu_info()}
+
+# ---------------- Blender (fixed script, shipped inside signed code; the bot can never send script text) ----------------
+BLENDER_SCRIPT = """import bpy, os, json
+bpy.ops.wm.read_factory_settings(use_empty=True)
+sc = bpy.context.scene
+sc.render.engine = 'BLENDER_WORKBENCH'
+sc.render.resolution_x = 320; sc.render.resolution_y = 180; sc.render.resolution_percentage = 100
+sc.render.image_settings.file_format = 'PNG'
+sc.render.filepath = os.path.join(os.getcwd(), 'render.png')
+bpy.ops.mesh.primitive_cube_add(size=2)
+cam = bpy.data.objects.new('cam', bpy.data.cameras.new('cam')); sc.collection.objects.link(cam)
+cam.location = (4.0, -4.0, 3.0); cam.rotation_euler = (1.1, 0.0, 0.8); sc.camera = cam
+bpy.ops.render.render(write_still=True)
+print('SW_RESULT ' + json.dumps({'blender': bpy.app.version_string}))
+"""
+_bl_cache = {"t": 0, "v": False, "exe": None}
+
+def find_blender(root):
+    c = [pathlib.Path(root, "blender", "blender.exe")]
+    bases = []
+    if os.environ.get("ProgramFiles"): bases.append(pathlib.Path(os.environ["ProgramFiles"], "Blender Foundation"))
+    if os.environ.get("LOCALAPPDATA"): bases.append(pathlib.Path(os.environ["LOCALAPPDATA"], "Programs", "Blender Foundation"))
+    for p in bases:
+        if p.exists(): c += [d / "blender.exe" for d in sorted(p.glob("Blender *"), reverse=True)]
+    for x in c:
+        if x.exists(): return str(x)
+    return None
+
+def blender_version(root):
+    """Cached (10 min). Returns the version line or False when Blender is not found."""
+    if time.time() - _bl_cache["t"] < 600: return _bl_cache["v"]
+    _bl_cache["t"] = time.time(); exe = find_blender(root); _bl_cache["exe"] = exe; _bl_cache["v"] = False
+    if exe:
+        try: _bl_cache["v"] = (subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=30).stdout.splitlines() or ["?"])[0][:60]
+        except Exception: _bl_cache["v"] = False
+    return _bl_cache["v"]
+
+def blender_test(root, jd):
+    """ONE fixed job, no payload is used. Runs Blender in background mode with factory settings, offline flag, cwd = job folder, hard timeout; renders one 320x180 Workbench frame."""
+    exe = find_blender(root)
+    if not exe: return {"ok": False, "error": "Blender not found on this PC"}
+    sp = pathlib.Path(jd, "scene.py"); sp.write_text(BLENDER_SCRIPT)
+    cmd = [exe, "-b", "--factory-startup", "--offline-mode", "-noaudio", "--python", str(sp)]
+    t0 = time.time()
+    try: r = subprocess.run(cmd, capture_output=True, text=True, timeout=150, cwd=str(jd))
+    except subprocess.TimeoutExpired: return {"ok": False, "error": "blender timed out (150 s), killed"}
+    sec = round(time.time() - t0, 2); out = pathlib.Path(jd, "render.png")
+    if r.returncode != 0 or not out.exists(): return {"ok": False, "render_sec": sec, "error": "blender failed rc=%s: %s" % (r.returncode, ((r.stderr or "") + (r.stdout or ""))[-400:])}
+    data = out.read_bytes(); ver = ""
+    for line in r.stdout.splitlines():
+        if line.startswith("SW_RESULT "): ver = line[10:][:80]
+    return {"ok": True, "render_sec": sec, "bytes": len(data), "png": data[:8] == b"\x89PNG\r\n\x1a\n", "sha256": hashlib.sha256(data).hexdigest(), "info": ver}
 
 def gpu_info():
     try:
