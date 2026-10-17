@@ -2,16 +2,8 @@ name: render
 on:
   workflow_dispatch:
     inputs:
-      script_b64:
-        description: "base64 of the scene script JSON (empty = bundled Suez sample)"
-        required: false
-        default: ""
       job_id:
         description: "bot job id"
-        required: false
-        default: ""
-      callback:
-        description: "bot callback URL"
         required: false
         default: ""
 jobs:
@@ -36,9 +28,15 @@ jobs:
           curl -sfL --retry 3 -o admin1.json $B/ne_10m_admin_1_states_provinces.geojson
       - name: build project
         env:
-          SCRIPT_B64: ${{ inputs.script_b64 }}
+          JOB_ID: ${{ inputs.job_id }}
+          GH_RUN_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
         run: |
-          if [ -n "$SCRIPT_B64" ]; then echo "$SCRIPT_B64" | base64 -d > script.json; else cp script_suez.json script.json; fi
+          # the script and callback are fetched from the bot with this run's own token (not passed as inputs, so public run pages show neither)
+          if [ -n "$JOB_ID" ] && curl -sf -m 30 --retry 3 -H "x-gh-token: $GH_RUN_TOKEN" -H "x-run-id: $RUN_ID" "https://tg-assistant-bot-hazel.vercel.app/render/script/$JOB_ID" -o bundle.json; then
+            python3 -c "import json;b=json.load(open('bundle.json'));json.dump(b['script'],open('script.json','w'),ensure_ascii=False);open('callback.txt','w').write(b.get('callback',''))"
+          else cp script_suez.json script.json; : > callback.txt; fi
+          rm -f bundle.json
           mkdir -p proj && cp template/* proj/
           if python3 -c "import json;d=json.load(open('script.json'));assert 'speaker' in d['scenes'][0] or 'countries' in d['scenes'][0]"; then python3 build2.py script.json "$PWD/proj"; else python3 build.py script.json "$PWD/proj"; fi
       - name: render
@@ -54,9 +52,9 @@ jobs:
         if: always()
         env:
           JOB_ID: ${{ inputs.job_id }}
-          CALLBACK: ${{ inputs.callback }}
           STATUS: ${{ job.status }}
         run: |
+          CALLBACK=$(cat callback.txt 2>/dev/null || true)
           if [ -n "$CALLBACK" ] && [ -n "$JOB_ID" ]; then
             curl -s -m 30 -X POST -H 'content-type: application/json' "$CALLBACK" -d "{\"job_id\":\"$JOB_ID\",\"run_id\":\"${{ github.run_id }}\",\"status\":\"$STATUS\"}" || true
           fi
