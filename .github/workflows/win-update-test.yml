@@ -1,0 +1,36 @@
+name: win-update-test
+on:
+  workflow_dispatch:
+    inputs:
+      bot_url:
+        description: staging bot url
+        required: true
+      code:
+        description: one-time enroll code (single use, 1h)
+        required: true
+jobs:
+  win:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install (no task) and enroll
+        shell: powershell
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'sw'
+          & .\laptop\install.ps1 -BotUrl '${{ github.event.inputs.bot_url }}' -Code '${{ github.event.inputs.code }}' -RootDir $root -NoTask
+          if ($LASTEXITCODE -ne 0) { throw 'install failed' }
+      - name: Update (worker v1 + hash-checked official ffmpeg)
+        shell: powershell
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'sw'
+          & .\laptop\update.ps1 -RootDir $root -NoTask
+          if ($LASTEXITCODE -ne 0) { throw 'update failed' }
+          if (-not (Test-Path (Join-Path $root 'ffmpeg\bin\ffmpeg.exe'))) { throw 'no ffmpeg' }
+      - name: Run the fixed ffmpeg_test job locally (no queue, no bot)
+        shell: powershell
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'sw'
+          $py = Join-Path $root 'py\python.exe'
+          $code = "import sys,pathlib,json; sys.path.insert(0, r'$root'); import worker; jd=pathlib.Path(r'$root','jobs','t'); jd.mkdir(parents=True,exist_ok=True); print(json.dumps(worker.ffmpeg_test(r'$root', jd)))"
+          & $py -c $code
+          if ($LASTEXITCODE -ne 0) { throw 'job failed' }
