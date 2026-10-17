@@ -6,7 +6,7 @@ import threading, argparse, base64, re, hashlib, hmac, json, os, subprocess, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 ALLOWED = {"render", "browser_task", "wan_generate", "blender", "ping", "ffmpeg_test", "nvenc_test", "blender_test", "blender_video"}
-VERSION = 8
+VERSION = 9
 POLL_SECS = 20
 RESTART_CODE = 75
 # Release signing PUBLIC key (Ed25519). The private key is not on the bot server and not on this PC.
@@ -507,7 +507,7 @@ def resolve_info():
 
 def gpu_info():
     try:
-        return subprocess.run(["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"], capture_output=True, text=True, timeout=8).stdout.strip() or "none"
+        return subprocess.run(["nvidia-smi", "--query-gpu=name,memory.total,driver_version", "--format=csv,noheader"], capture_output=True, text=True, timeout=8).stdout.strip() or "none"
     except Exception: return "none"
 
 if __name__ == "__main__":
