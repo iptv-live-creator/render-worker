@@ -269,9 +269,9 @@ bg = w.node_tree.nodes['Background']; bg.inputs['Color'].default_value = (0.004,
 bpy.ops.mesh.primitive_plane_add(size=60, location=(0, 0, -2.2))
 fl = bpy.context.active_object; fl.data.materials.append(mat('floor', (0.02, 0.025, 0.04, 1), 0.0, 0.12))
 bpy.ops.mesh.primitive_uv_sphere_add(radius=0.9, segments=64, ring_count=32, location=(0, 0, 0))
-sp = bpy.context.active_object; bpy.ops.object.shade_smooth(); sp.data.materials.append(mat('core', (1.0, 0.42, 0.08, 1), 0.0, 0.3, 7.0))
+sp = bpy.context.active_object; bpy.ops.object.shade_smooth(); sp.data.materials.append(mat('core', (1.0, 0.42, 0.08, 1), 0.0, 0.3, 2.4))
 rings = []
-specs = [(1.7, 0.035, (1.0, 0.78, 0.35, 1), 0.18, (1, 0, 0), 1), (2.4, 0.045, (0.85, 0.88, 0.95, 1), 0.12, (0, 1, 0), -1), (3.2, 0.055, (0.9, 0.45, 0.3, 1), 0.22, (1, 1, 0), 1)]
+specs = [(1.7, 0.06, (1.0, 0.78, 0.35, 1), 0.18, (1, 0, 0), 1), (2.4, 0.075, (0.85, 0.88, 0.95, 1), 0.12, (0, 1, 0), -1), (3.2, 0.09, (0.9, 0.45, 0.3, 1), 0.22, (1, 1, 0), 1)]
 for i, (R, r, col, rough, ax, d) in enumerate(specs):
     bpy.ops.mesh.primitive_torus_add(major_radius=R, minor_radius=r, major_segments=128, minor_segments=24)
     o = bpy.context.active_object; bpy.ops.object.shade_smooth(); o.data.materials.append(mat('ring%d' % i, col, 1.0, rough))
