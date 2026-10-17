@@ -477,7 +477,7 @@ html=f"""<!doctype html><html lang="ar"><head><meta charset="UTF-8"/><meta name=
 .pin{{fill:#e0523ad9;stroke:#fff;stroke-width:6;vector-effect:non-scaling-stroke}}.ar{{fill:none;stroke:#ffd24a;stroke-width:8;stroke-linecap:round;vector-effect:non-scaling-stroke;stroke-dasharray:0 1}}
 #map{{position:absolute;left:0;top:0}}.chr{{position:absolute;bottom:560px;opacity:0}}#ch_n{{left:40px}}#ch_a{{left:425px}}#ch_b{{right:40px}}
 .nb{{position:absolute;color:#4a3f22;font-size:38px;font-weight:700;opacity:0;white-space:nowrap;transform:translateX(-50%);text-shadow:0 0 6px #e8d9b0,0 0 6px #e8d9b0,0 0 10px #e8d9b0}}.lab{{position:absolute;background:#0b1f3add;color:#fff;padding:14px 30px;border-radius:40px;font-size:54px;font-weight:700;opacity:0;white-space:nowrap;transform:translateX(-50%)}}
-.cap{{position:absolute;left:60px;right:60px;bottom:170px;background:#0b1226f2;color:#fff;font-size:64px;line-height:1.5;padding:30px;border-radius:36px;text-align:center;font-weight:700;opacity:0}}
+.cap{{position:absolute;left:60px;right:60px;bottom:90px;background:#0b1226f2;color:#fff;font-size:54px;line-height:1.4;padding:24px;border-radius:36px;text-align:center;font-weight:700;opacity:0}}
 .cap span{{opacity:.55}}.cap span.on{{opacity:1;color:#ffd24a}}#src{{position:absolute;left:20px;bottom:40px;color:#fff;background:#000c;padding:6px 12px;border-radius:10px;font-size:26px;direction:ltr}}
 </style></head><body>
 <div id="root" data-composition-id="main" data-start="0" data-duration="{TOT}" data-width="1080" data-height="1920">
@@ -544,16 +544,20 @@ for i,s in enumerate(sc['scenes']):
     t0=starts[i];d=auds[i][1]; cx,cy,span=cams[i]; w=span*S; h=w/AR
     html+=f'tl.to(vb,{{x:{X(cx)-w/2:.1f},y:{Y(cy)-h/2+0.1*h:.1f},w:{w:.1f},h:{h:.1f},duration:1.2,ease:"power2.inOut",onUpdate:set}},{max(0,t0-0.2):.2f});\n'
     # in-scene push-in: slow 8% zoom about the view centre (screen 540,960) so the picture never sits still; labels move with the map so they stay on their pins
-    _pz=0.92; _pt0=t0+1.0; _pd=d+GAP-1.25
+    _pz=0.80; _pt0=t0+0.6; _pd=d+GAP-0.7
     if _pd>0.8:
-        html+=f'tl.to(vb,{{x:{X(cx)-w/2+w*(1-_pz)/2:.1f},y:{Y(cy)-h/2+0.1*h+h*(1-_pz)/2:.1f},w:{w*_pz:.1f},h:{h*_pz:.1f},duration:{_pd:.2f},ease:"none",onUpdate:set}},{_pt0:.2f});\n'
+        _ls=[(_x,_y) for (_a,_k),(_x,_y) in labxy.items() if _a==i]
+        _ax=min(740,max(340,sum(p[0] for p in _ls)/len(_ls))) if _ls else 540
+        _ay=min(1200,max(720,sum(p[1] for p in _ls)/len(_ls))) if _ls else 960
+        _mx=X(cx)-w/2+_ax/1080*w; _my=Y(cy)-h/2+0.1*h+_ay/1920*h
+        html+=f'tl.to(vb,{{x:{_mx-_ax/1080*w*_pz:.1f},y:{_my-_ay/1920*h*_pz:.1f},w:{w*_pz:.1f},h:{h*_pz:.1f},duration:{_pd:.2f},ease:"power1.inOut",onUpdate:set}},{_pt0:.2f});\n'
         _zz=1/_pz-1
-        for (_ii,_kk),(_lx,_ly) in list(labxy.items())+[((a,b),c_) for (a,b),c_ in nbxy.items() if False]:
-            if _ii!=i: continue
-            html+=f'tl.to("#l{i}_{_kk}",{{x:{(_lx-540)*_zz:.1f},y:{(_ly-960)*_zz:.1f},duration:{_pd:.2f},ease:"none"}},{_pt0:.2f});\n'
-        for (_ii,_kk),(_lx,_ly) in nbxy.items():
-            if _ii!=i: continue
-            html+=f'tl.to("#nb{i}_{_kk}",{{x:{(_lx-540)*_zz:.1f},y:{(_ly-960)*_zz:.1f},duration:{_pd:.2f},ease:"none"}},{_pt0:.2f});\n'
+        for _dct,_pre in ((labxy,"l"),(nbxy,"nb")):
+            for (_ii,_kk),(_lx,_ly) in _dct.items():
+                if _ii!=i: continue
+                _tx=(_lx-_ax)*_zz; _ty=(_ly-_ay)*_zz
+                _tx=max(-(_lx-170),min(1080-170-_lx,_tx)); _ty=max(-(_ly-300),min(1500-_ly,_ty))
+                html+=f'tl.to("#{_pre}{i}_{_kk}",{{x:{_tx:.1f},y:{_ty:.1f},duration:{_pd:.2f},ease:"power1.inOut"}},{_pt0:.2f});\n'
     html+=f'tl.to("#hl{i}",{{opacity:{0.4 if cams[i][2]<12 else 1},duration:.4}},{t0:.2f}).to("#hl{i}",{{opacity:0,duration:.25}},{t0+d+GAP-.1:.2f});\n'
     if cams[i][2]<12 or (cams[i][2]<70 and not _hasl(i)): html+=f'tl.to("#pin{i}",{{attr:{{r:{max(cams[i][2]*S*(0.03 if cams[i][2]<12 else 0.012),18):.1f}}},duration:.4}},{t0+.3:.2f}).to("#pin{i}",{{attr:{{r:0}},duration:.2}},{t0+d+GAP-.1:.2f});\n'
     for k in range(len(GEOS[i])):
@@ -574,8 +578,8 @@ for i,s in enumerate(sc['scenes']):
     if osm_svg and ('السويس' in s['vo'] or 'suez' in s['vo'].lower() or 'قناة' in s['vo']):
         html+=f'tl.fromTo(".cn",{{strokeDasharray:"0 1"}},{{strokeDasharray:"1 0",duration:{min(2.0,d):.2f},ease:"none"}},{t0:.2f});\n'
     sp_=s["spk"] if s["spk"] in ("n","a","b") else ("a" if s["spk"]=="c" else "n"); sp_= "b" if s["spk"]=="c" else sp_
-    html+=f'tl.to({{p:0}},{{p:1,duration:{d:.2f},ease:"none",onUpdate:function(){{const e=ENV[Math.min(ENV.length-1,Math.floor(({t0:.2f}+this.progress()*{d:.2f})*FPS))]||0;const m=document.getElementById("m_{sp_}");m.setAttribute("ry",3+e*26);m.setAttribute("rx",22-e*6);document.getElementById("ch_{sp_}").style.transform="translateY("+(-e*14)+"px) scale("+(1+e*.05)+")";}}}},{t0:.2f});\n'
+    html+=f'tl.to({{p:0}},{{p:1,duration:{d:.2f},ease:"none",onUpdate:function(){{const tt={t0:.2f}+this.progress()*{d:.2f};const e=ENV[Math.min(ENV.length-1,Math.floor(tt*FPS))]||0;const m=document.getElementById("m_{sp_}");m.setAttribute("ry",3+e*26);m.setAttribute("rx",22-e*6);["n","a","b"].forEach(function(o,ix){{const el=document.getElementById("ch_"+o);if(o=="{sp_}"){{el.style.transform="translateY("+(-e*34-Math.abs(Math.sin(tt*7))*6)+"px) rotate("+(Math.sin(tt*4.5)*3)+"deg) scale("+(1+e*.12)+")";}}else{{el.style.transform="translateY("+(-Math.abs(Math.sin(tt*3+ix))*8)+"px) rotate("+(Math.sin(tt*2.2+ix*2)*2.5)+"deg)";}}}});}}}},{t0:.2f});\n'
     for o in ('n','a','b'):
-        if o!=sp_: html+=f'tl.set("#m_{o}",{{attr:{{ry:3,rx:22}}}},{t0:.2f});tl.set("#ch_{o}",{{y:0}},{t0:.2f});\n'
+        if o!=sp_: html+=f'tl.set("#m_{o}",{{attr:{{ry:3,rx:22}}}},{t0:.2f});\n'
 html+='window.__timelines["main"]=tl;tl.seek(0);\n</script></body></html>'
 open(OUT+'/index.html','w').write(html); print('built',TOT,'s',len(html)//1024,'KB')
