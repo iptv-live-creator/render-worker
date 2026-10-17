@@ -2,11 +2,11 @@
 Outbound HTTPS only. Whitelisted job types. Signed jobs only. No shell, no arbitrary code from the bot.
 Usage: worker.py --enroll CODE --bot URL --root DIR   (one time)
        worker.py --run --bot URL --root DIR            (loop)"""
-import argparse, base64, re, hashlib, hmac, json, os, subprocess, sys, time, urllib.request, urllib.error, shutil, pathlib
+import threading, argparse, base64, re, hashlib, hmac, json, os, subprocess, sys, time, urllib.request, urllib.error, shutil, pathlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 ALLOWED = {"render", "browser_task", "wan_generate", "blender", "ping", "ffmpeg_test", "nvenc_test", "blender_test", "blender_video"}
-VERSION = 6
+VERSION = 7
 POLL_SECS = 20
 RESTART_CODE = 75
 # Release signing PUBLIC key (Ed25519). The private key is not on the bot server and not on this PC.
@@ -225,7 +225,7 @@ def blender_test(root, jd):
     try: r = subprocess.run(cmd, capture_output=True, text=True, timeout=150, cwd=str(jd))
     except subprocess.TimeoutExpired: return {"ok": False, "error": "blender timed out (150 s), killed"}
     sec = round(time.time() - t0, 2); out = pathlib.Path(jd, "render.png")
-    if r.returncode != 0 or not out.exists(): return {"ok": False, "render_sec": sec, "error": "blender failed rc=%s: %s" % (r.returncode, ((r.stderr or "") + (r.stdout or ""))[-400:])}
+    if r.returncode != 0 or not out.exists(): return {"ok": False, "render_sec": sec, "device_line": devline, "error": "blender failed rc=%s: %s" % (r.returncode, ((r.stderr or "") + (r.stdout or ""))[-400:])}
     data = out.read_bytes(); ver = ""
     for line in r.stdout.splitlines():
         if line.startswith("SW_RESULT "): ver = line[10:][:80]
@@ -246,7 +246,7 @@ try: sc.cycles.denoiser = 'OPENIMAGEDENOISE'
 except Exception: pass
 sc.render.image_settings.file_format = 'PNG'
 sc.render.filepath = os.path.join(os.getcwd(), 'frames', '')
-dev = 'CPU'
+dev = 'CPU'; dev_err = ''; dev_list = []
 try:
     pr = bpy.context.preferences.addons['cycles'].preferences
     for t in ('OPTIX', 'CUDA'):
@@ -254,9 +254,16 @@ try:
         g = [d for d in pr.devices if d.type == t]
         if g:
             for d in pr.devices: d.use = (d.type == t)
-            sc.cycles.device = 'GPU'; dev = t; break
+            sc.cycles.device = 'GPU'; dev = t; dev_list = [d.name for d in g]
+            if t == 'OPTIX':
+                try: sc.cycles.denoiser = 'OPTIX'
+                except Exception: pass
+            break
+    if dev == 'CPU': dev_err = 'no gpu devices: ' + ','.join(d.type + ':' + d.name for d in pr.devices)[:150]
 except Exception as e:
-    dev = 'CPU'
+    dev = 'CPU'; dev_err = str(e)[:150]
+print('SW_DEVICE ' + dev + ' ' + str(dev_list) + ' ' + dev_err, flush=True)
+if dev == 'CPU': raise SystemExit(3)
 def mat(name, color, metal, rough, emit=0.0):
     m = bpy.data.materials.new(name); m.use_nodes = True
     b = m.node_tree.nodes['Principled BSDF']
@@ -333,7 +340,7 @@ try:
 except Exception as e:
     print('SW_NOGLARE ' + str(e)[:80])
 bpy.ops.render.render(animation=True)
-print('SW_RESULT ' + json.dumps({'blender': bpy.app.version_string, 'device': dev, 'frames': N}))
+print('SW_RESULT ' + json.dumps({'blender': bpy.app.version_string, 'device': dev, 'gpus': dev_list, 'err': dev_err, 'frames': N}))
 """
 
 def blender_video(root, jd, payload):
@@ -348,12 +355,22 @@ def blender_video(root, jd, payload):
     pathlib.Path(jd, "frames").mkdir(exist_ok=True)
     pathlib.Path(jd, "params.json").write_text(json.dumps({"seconds": secs, "w": w, "h": h, "samples": samples}))
     pathlib.Path(jd, "scene.py").write_text(VIDEO_SCRIPT)
-    t0 = time.time()
+    t0 = time.time(); util = []; stop = threading.Event()
+    def _samp():
+        while not stop.wait(5):
+            try:
+                v = subprocess.run(["nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=6).stdout.strip().splitlines()[0]
+                util.append(int(v))
+            except Exception: pass
+    th = threading.Thread(target=_samp, daemon=True); th.start()
     try: r = subprocess.run([exe, "-b", "--factory-startup", "--offline-mode", "-noaudio", "--python", str(pathlib.Path(jd, "scene.py"))], capture_output=True, text=True, timeout=1800, cwd=str(jd))
-    except subprocess.TimeoutExpired: return {"ok": False, "error": "blender timed out (30 min), killed"}
-    render_sec = round(time.time() - t0, 1); info = ""
+    except subprocess.TimeoutExpired:
+        stop.set(); return {"ok": False, "error": "blender timed out (30 min), killed"}
+    stop.set(); render_sec = round(time.time() - t0, 1); info = ""; devline = ""
     for line in r.stdout.splitlines():
-        if line.startswith("SW_RESULT "): info = line[10:][:120]
+        if line.startswith("SW_RESULT "): info = line[10:][:300]
+        if line.startswith("SW_DEVICE "): devline = line[10:][:240]
+    gu = {"samples": len(util), "avg": round(sum(util) / len(util), 1) if util else None, "max": max(util) if util else None}
     nfr = len(list(pathlib.Path(jd, "frames").glob("*.png")))
     if r.returncode != 0 or nfr != secs * 24: return {"ok": False, "render_sec": render_sec, "frames": nfr, "error": "blender failed rc=%s: %s" % (r.returncode, ((r.stderr or "") + (r.stdout or ""))[-400:])}
     out = pathlib.Path(jd, "out.mp4"); enc = None
@@ -363,7 +380,7 @@ def blender_video(root, jd, payload):
         if e.returncode == 0 and out.exists(): enc = codec; break
     if not enc: return {"ok": False, "render_sec": render_sec, "error": "ffmpeg encode failed: " + (e.stderr or "")[:300]}
     data = out.read_bytes()
-    return {"ok": True, "render_sec": render_sec, "encoder": enc, "frames": nfr, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(), "info": info, "_art": ("out.mp4", data)}
+    return {"ok": True, "render_sec": render_sec, "encoder": enc, "frames": nfr, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(), "info": info, "device_line": devline, "gpu_util": gu, "_art": ("out.mp4", data)}
 
 _rs_cache = {"t": 0, "v": False}
 def resolve_info():
