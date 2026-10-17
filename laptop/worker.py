@@ -6,7 +6,7 @@ import threading, argparse, base64, re, hashlib, hmac, json, os, subprocess, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 ALLOWED = {"render", "browser_task", "wan_generate", "blender", "ping", "ffmpeg_test", "nvenc_test", "blender_test", "blender_video"}
-VERSION = 9
+VERSION = 10
 POLL_SECS = 20
 RESTART_CODE = 75
 # Release signing PUBLIC key (Ed25519). The private key is not on the bot server and not on this PC.
@@ -123,7 +123,7 @@ def loop(a):
             if a.supervised and time.time() - last_upd > UPDATE_EVERY:
                 last_upd = time.time(); st, det = check_update(a.root, a.bot); log(a.root, "update check: %s %s" % (st, det))
                 if st == "applied": log(a.root, "restarting into new release"); sys.exit(RESTART_CODE)
-            r = http(a.bot, "/worker/poll", token=tok, body={"gpu": gpu_info(), "v": VERSION, "seq": current_seq(a.root), "supervised": bool(a.supervised), "ffmpeg": bool(find_ffmpeg(a.root)), "blender": blender_version(a.root), "resolve": resolve_info()})
+            r = http(a.bot, "/worker/poll", token=tok, body={"gpu": gpu_info(), "v": VERSION, "seq": current_seq(a.root), "supervised": bool(a.supervised), "ffmpeg": bool(find_ffmpeg(a.root)), "blender": blender_version(a.root), "resolve": resolve_info(), "power": power_state()})
             if a.supervised: mark_healthy(a.root)
             job = r.get("job")
             if job:
@@ -225,7 +225,7 @@ def blender_test(root, jd):
     try: r = subprocess.run(cmd, capture_output=True, text=True, timeout=150, cwd=str(jd))
     except subprocess.TimeoutExpired: return {"ok": False, "error": "blender timed out (150 s), killed"}
     sec = round(time.time() - t0, 2); out = pathlib.Path(jd, "render.png")
-    if r.returncode != 0 or not out.exists(): return {"ok": False, "render_sec": sec, "device_line": devline, "error": "blender failed rc=%s: %s" % (r.returncode, ((r.stderr or "") + (r.stdout or ""))[-400:])}
+    if r.returncode != 0 or not out.exists(): return {"ok": False, "render_sec": sec, "device_line": devline, "power_start": pw0, "error": "blender failed rc=%s: %s" % (r.returncode, ((r.stderr or "") + (r.stdout or ""))[-400:])}
     data = out.read_bytes(); ver = ""
     for line in r.stdout.splitlines():
         if line.startswith("SW_RESULT "): ver = line[10:][:80]
@@ -462,7 +462,7 @@ def blender_video(root, jd, payload):
         prm["countries"] = cs; pathlib.Path(jd, "geo.json").write_text(json.dumps(geo))
     pathlib.Path(jd, "params.json").write_text(json.dumps(prm))
     pathlib.Path(jd, "scene.py").write_text(ATLAS_SCRIPT if preset == "atlas_map" else VIDEO_SCRIPT)
-    t0 = time.time(); util = []; stop = threading.Event()
+    pw0 = power_state(); t0 = time.time(); util = []; stop = threading.Event()
     def _samp():
         while not stop.wait(5):
             try:
@@ -487,7 +487,7 @@ def blender_video(root, jd, payload):
         if e.returncode == 0 and out.exists(): enc = codec; break
     if not enc: return {"ok": False, "render_sec": render_sec, "error": "ffmpeg encode failed: " + (e.stderr or "")[:300]}
     data = out.read_bytes()
-    return {"ok": True, "render_sec": render_sec, "encoder": enc, "frames": nfr, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(), "info": info, "device_line": devline, "gpu_util": gu, "_art": ("out.mp4", data)}
+    return {"ok": True, "render_sec": render_sec, "encoder": enc, "frames": nfr, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(), "info": info, "device_line": devline, "gpu_util": gu, "power_start": pw0, "power_end": power_state(), "_art": ("out.mp4", data)}
 
 _rs_cache = {"t": 0, "v": False}
 def resolve_info():
@@ -504,6 +504,15 @@ def resolve_info():
             except Exception: pass
             _rs_cache["v"] = str(p) + " | " + ver; break
     return _rs_cache["v"]
+
+def power_state():
+    """Read-only: AC/battery via GetSystemPowerStatus (no subprocess)."""
+    try:
+        import ctypes
+        class S(ctypes.Structure): _fields_ = [("ac", ctypes.c_ubyte), ("flag", ctypes.c_ubyte), ("pct", ctypes.c_ubyte), ("sf", ctypes.c_ubyte), ("lt", ctypes.c_uint32), ("lf", ctypes.c_uint32)]
+        st = S(); ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(st))
+        return ("AC" if st.ac == 1 else "battery" if st.ac == 0 else "?") + " " + (str(st.pct) + "%" if st.pct <= 100 else "?")
+    except Exception: return "n/a"
 
 def gpu_info():
     try:
