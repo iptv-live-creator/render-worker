@@ -2,6 +2,7 @@
 param([string]$BotUrl = 'https://tg-assistant-bot-hazel.vercel.app', [string]$RootDir = '', [string]$Code = '', [switch]$NoTask)
 $ErrorActionPreference = 'Stop'
 try {
+  if (-not [Environment]::Is64BitOperatingSystem) { throw 'This installer needs 64-bit Windows. This PC is 32-bit, nothing was installed.' }
   $Root = if ($RootDir) { $RootDir } else { Join-Path $env:LOCALAPPDATA 'ShaherWorker' }
   $Bot  = $BotUrl
   $PyUrl  = 'https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip'
