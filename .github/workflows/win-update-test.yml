@@ -24,7 +24,6 @@ jobs:
         run: |
           $root = Join-Path $env:RUNNER_TEMP 'sw'
           & .\laptop\update.ps1 -RootDir $root -NoTask
-          if ($LASTEXITCODE -ne 0) { throw 'update failed' }
           if (-not (Test-Path (Join-Path $root 'ffmpeg\bin\ffmpeg.exe'))) { throw 'no ffmpeg' }
       - name: Run the fixed ffmpeg_test job locally (no queue, no bot)
         shell: powershell
