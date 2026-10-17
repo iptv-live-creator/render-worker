@@ -286,7 +286,9 @@ def halo(r, strength):
     h.data.materials.append(hm); h.visible_shadow = False
     return h
 halo(1.15, 0.5); halo(1.6, 0.18); halo(2.4, 0.06)
-cm_ = sp.data.materials[0]; cm_.node_tree.nodes['Principled BSDF'].inputs['Base Color'].default_value = (0.0, 0.0, 0.0, 1)
+cm_ = sp.data.materials[0]; cnt = cm_.node_tree; cnt.nodes.clear()
+ce = cnt.nodes.new('ShaderNodeEmission'); ce.inputs['Color'].default_value = (1.0, 0.32, 0.03, 1); ce.inputs['Strength'].default_value = 6.0
+co_ = cnt.nodes.new('ShaderNodeOutputMaterial'); cnt.links.new(ce.outputs[0], co_.inputs['Surface'])
 rings = []
 specs = [(1.7, 0.06, (1.0, 0.78, 0.35, 1), 0.18, (1, 0, 0), 1), (2.4, 0.075, (0.85, 0.88, 0.95, 1), 0.12, (0, 1, 0), -1), (3.2, 0.09, (0.9, 0.45, 0.3, 1), 0.22, (1, 1, 0), 1)]
 for i, (R, r, col, rough, ax, d) in enumerate(specs):
