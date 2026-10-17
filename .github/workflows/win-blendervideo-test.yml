@@ -1,0 +1,50 @@
+name: win-blendervideo-test
+on:
+  workflow_dispatch:
+    inputs:
+      seconds: { description: seconds, default: '2' }
+      res: { description: res, default: '360p' }
+      samples: { description: samples, default: '16' }
+jobs:
+  win:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - uses: actions/cache/restore@v4
+        id: bc
+        with:
+          path: ${{ runner.temp }}\blenderx
+          key: blender-5.2.2-x64
+      - name: Blender (cached or hash-checked download) + ffmpeg (hash-checked, gyan.dev)
+        shell: powershell
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'sw'; New-Item -ItemType Directory -Force -Path $root | Out-Null
+          $bx = Join-Path $env:RUNNER_TEMP 'blenderx'
+          if (-not (Test-Path (Join-Path $bx 'blender.exe'))) {
+            $zip = Join-Path $env:RUNNER_TEMP 'b.zip'
+            Invoke-WebRequest 'https://download.blender.org/release/Blender5.2/blender-5.2.2-windows-x64.zip' -OutFile $zip
+            if ((Get-FileHash $zip -Algorithm SHA256).Hash.ToLower() -ne '3849d17a682cba006075aaa3f3597ecb5c9c30ec31035b2e092c53e40679b535') { throw 'blender hash mismatch' }
+            Expand-Archive $zip -DestinationPath (Join-Path $env:RUNNER_TEMP 'bx') -Force
+            Move-Item (Get-ChildItem (Join-Path $env:RUNNER_TEMP 'bx') | Select-Object -First 1).FullName $bx
+          }
+          Copy-Item $bx (Join-Path $root 'blender') -Recurse
+          $fz = Join-Path $env:RUNNER_TEMP 'ff.zip'
+          Invoke-WebRequest 'https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.2-essentials_build.zip' -OutFile $fz
+          if ((Get-FileHash $fz -Algorithm SHA256).Hash.ToLower() -ne '60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba') { throw 'ffmpeg hash mismatch' }
+          Expand-Archive $fz -DestinationPath (Join-Path $env:RUNNER_TEMP 'fx') -Force
+          New-Item -ItemType Directory -Force -Path (Join-Path $root 'ffmpeg\bin') | Out-Null
+          Copy-Item (Get-ChildItem (Join-Path $env:RUNNER_TEMP 'fx') -Recurse -Filter ffmpeg.exe | Select-Object -First 1).FullName (Join-Path $root 'ffmpeg\bin\ffmpeg.exe')
+          Copy-Item laptop\worker.py, laptop\ed25519_verify.py $root
+      - name: Run fixed blender_video job
+        shell: powershell
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'sw'
+          $env:SW_ROOT = $root; $env:SW_OUT = (Join-Path $env:RUNNER_TEMP 'out'); New-Item -ItemType Directory -Force -Path $env:SW_OUT | Out-Null
+          $env:SW_SECS = '${{ github.event.inputs.seconds }}'; $env:SW_RES = '${{ github.event.inputs.res }}'; $env:SW_SAMPLES = '${{ github.event.inputs.samples }}'
+          python laptop\ci_video.py
+          if ($LASTEXITCODE -ne 0) { throw 'video job failed' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: video, path: '${{ runner.temp }}\out' }

@@ -5,8 +5,8 @@ Usage: worker.py --enroll CODE --bot URL --root DIR   (one time)
 import argparse, base64, re, hashlib, hmac, json, os, subprocess, sys, time, urllib.request, urllib.error, shutil, pathlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-ALLOWED = {"render", "browser_task", "wan_generate", "blender", "ping", "ffmpeg_test", "nvenc_test", "blender_test"}
-VERSION = 4
+ALLOWED = {"render", "browser_task", "wan_generate", "blender", "ping", "ffmpeg_test", "nvenc_test", "blender_test", "blender_video"}
+VERSION = 5
 POLL_SECS = 20
 RESTART_CODE = 75
 # Release signing PUBLIC key (Ed25519). The private key is not on the bot server and not on this PC.
@@ -44,6 +44,7 @@ def run_job(a, job):
         if t == "ffmpeg_test": return ffmpeg_test(a.root, jd)
         if t == "nvenc_test": return nvenc_test(a.root, jd)
         if t == "blender_test": return blender_test(a.root, jd)
+        if t == "blender_video": return blender_video(a.root, jd, job.get("payload") or {})
         if t == "render": return {"ok": False, "error": "render handler not implemented yet"}
         if t == "browser_task": return {"ok": False, "error": "browser_task handler not implemented yet"}
         if t == "wan_generate": return {"ok": False, "error": "WanGP not installed (needs Shaher's approval)"}
@@ -229,6 +230,107 @@ def blender_test(root, jd):
     for line in r.stdout.splitlines():
         if line.startswith("SW_RESULT "): ver = line[10:][:80]
     return {"ok": True, "render_sec": sec, "bytes": len(data), "png": data[:8] == b"\x89PNG\r\n\x1a\n", "sha256": hashlib.sha256(data).hexdigest(), "info": ver, "_art": ("render.png", data)}
+
+# Fixed scene "orbit_rings". Script text lives here (signed code). The payload only picks validated numbers.
+VIDEO_PRESETS = {"orbit_rings"}
+VIDEO_RES = {"360p": (640, 360), "540p": (960, 540), "720p": (1280, 720)}
+VIDEO_SCRIPT = """import bpy, os, json, math
+P = json.load(open(os.path.join(os.getcwd(), 'params.json')))
+FPS = 24; N = P['seconds'] * FPS
+bpy.ops.wm.read_factory_settings(use_empty=True)
+sc = bpy.context.scene
+sc.render.fps = FPS; sc.frame_start = 1; sc.frame_end = N
+sc.render.resolution_x, sc.render.resolution_y = P['w'], P['h']; sc.render.resolution_percentage = 100
+sc.render.engine = 'CYCLES'; sc.cycles.samples = P['samples']; sc.cycles.use_denoising = True
+try: sc.cycles.denoiser = 'OPENIMAGEDENOISE'
+except Exception: pass
+sc.render.image_settings.file_format = 'PNG'
+sc.render.filepath = os.path.join(os.getcwd(), 'frames', '')
+dev = 'CPU'
+try:
+    pr = bpy.context.preferences.addons['cycles'].preferences
+    for t in ('OPTIX', 'CUDA'):
+        pr.compute_device_type = t; pr.get_devices()
+        g = [d for d in pr.devices if d.type == t]
+        if g:
+            for d in pr.devices: d.use = (d.type == t)
+            sc.cycles.device = 'GPU'; dev = t; break
+except Exception as e:
+    dev = 'CPU'
+def mat(name, color, metal, rough, emit=0.0):
+    m = bpy.data.materials.new(name); m.use_nodes = True
+    b = m.node_tree.nodes['Principled BSDF']
+    b.inputs['Base Color'].default_value = color; b.inputs['Metallic'].default_value = metal; b.inputs['Roughness'].default_value = rough
+    if emit > 0:
+        b.inputs['Emission Color'].default_value = color; b.inputs['Emission Strength'].default_value = emit
+    return m
+w = bpy.data.worlds.new('w'); sc.world = w; w.use_nodes = True
+bg = w.node_tree.nodes['Background']; bg.inputs['Color'].default_value = (0.004, 0.008, 0.02, 1); bg.inputs['Strength'].default_value = 1.0
+bpy.ops.mesh.primitive_plane_add(size=60, location=(0, 0, -2.2))
+fl = bpy.context.active_object; fl.data.materials.append(mat('floor', (0.02, 0.025, 0.04, 1), 0.0, 0.12))
+bpy.ops.mesh.primitive_uv_sphere_add(radius=0.9, segments=64, ring_count=32, location=(0, 0, 0))
+sp = bpy.context.active_object; bpy.ops.object.shade_smooth(); sp.data.materials.append(mat('core', (1.0, 0.42, 0.08, 1), 0.0, 0.3, 7.0))
+rings = []
+specs = [(1.7, 0.035, (1.0, 0.78, 0.35, 1), 0.18, (1, 0, 0), 1), (2.4, 0.045, (0.85, 0.88, 0.95, 1), 0.12, (0, 1, 0), -1), (3.2, 0.055, (0.9, 0.45, 0.3, 1), 0.22, (1, 1, 0), 1)]
+for i, (R, r, col, rough, ax, d) in enumerate(specs):
+    bpy.ops.mesh.primitive_torus_add(major_radius=R, minor_radius=r, major_segments=128, minor_segments=24)
+    o = bpy.context.active_object; bpy.ops.object.shade_smooth(); o.data.materials.append(mat('ring%d' % i, col, 1.0, rough))
+    o.rotation_euler = (math.radians(70 + 20 * i), math.radians(15 * i), 0)
+    rings.append((o, d, [1, 1, 2][i]))
+for o, d, k in rings:
+    o.keyframe_insert('rotation_euler', frame=1)
+    o.rotation_euler[2] += d * 2 * math.pi * k
+    o.keyframe_insert('rotation_euler', frame=N + 1)
+    for fc in o.animation_data.action.fcurves:
+        for kp in fc.keyframe_points: kp.interpolation = 'LINEAR'
+em = bpy.data.objects.new('pivot', None); sc.collection.objects.link(em)
+cd = bpy.data.cameras.new('cam'); cd.lens = 42; cd.dof.use_dof = True; cd.dof.focus_object = sp; cd.dof.aperture_fstop = 3.2
+cam = bpy.data.objects.new('cam', cd); sc.collection.objects.link(cam); cam.parent = em; cam.location = (0, -9.5, 2.6); sc.camera = cam
+tc = cam.constraints.new('TRACK_TO'); tc.target = sp; tc.track_axis = 'TRACK_NEGATIVE_Z'; tc.up_axis = 'UP_Y'
+em.rotation_euler = (0, 0, math.radians(-25)); em.keyframe_insert('rotation_euler', frame=1)
+em.rotation_euler = (0, 0, math.radians(25)); em.keyframe_insert('rotation_euler', frame=N + 1)
+def area(name, loc, energy, color, size):
+    l = bpy.data.lights.new(name, 'AREA'); l.energy = energy; l.color = color; l.size = size
+    o = bpy.data.objects.new(name, l); sc.collection.objects.link(o); o.location = loc
+    c = o.constraints.new('TRACK_TO'); c.target = sp; c.track_axis = 'TRACK_NEGATIVE_Z'; c.up_axis = 'UP_Y'
+area('key', (-5, -5, 5), 900, (1.0, 0.9, 0.8), 4)
+area('rim', (6, 4, 3), 700, (0.35, 0.55, 1.0), 5)
+pl = bpy.data.lights.new('glow', 'POINT'); pl.energy = 1200; pl.color = (1.0, 0.5, 0.15); pl.shadow_soft_size = 0.5
+po = bpy.data.objects.new('glow', pl); sc.collection.objects.link(po)
+try: sc.view_settings.view_transform = 'AgX'
+except Exception: pass
+bpy.ops.render.render(animation=True)
+print('SW_RESULT ' + json.dumps({'blender': bpy.app.version_string, 'device': dev, 'frames': N}))
+"""
+
+def blender_video(root, jd, payload):
+    """Fixed job: preset name + seconds + resolution only (all validated). Renders a PNG sequence in the job folder with a FIXED script, encodes with ffmpeg (NVENC, falls back to libx264), returns the MP4 as the single result file."""
+    preset = payload.get("preset", "orbit_rings"); secs = payload.get("seconds", 6); res = payload.get("res", "540p")
+    if preset not in VIDEO_PRESETS or not isinstance(secs, int) or isinstance(secs, bool) or not (1 <= secs <= 12) or res not in VIDEO_RES:
+        return {"ok": False, "error": "invalid parameters (preset/seconds 1-12/res 360p|540p|720p)"}
+    exe = find_blender(root); ff = find_ffmpeg(root)
+    if not exe: return {"ok": False, "error": "Blender not found on this PC"}
+    if not ff: return {"ok": False, "error": "ffmpeg not found"}
+    w, h = VIDEO_RES[res]; samples = int(payload.get("samples", 48)) if isinstance(payload.get("samples", 48), int) and 4 <= payload.get("samples", 48) <= 128 else 48
+    pathlib.Path(jd, "frames").mkdir(exist_ok=True)
+    pathlib.Path(jd, "params.json").write_text(json.dumps({"seconds": secs, "w": w, "h": h, "samples": samples}))
+    pathlib.Path(jd, "scene.py").write_text(VIDEO_SCRIPT)
+    t0 = time.time()
+    try: r = subprocess.run([exe, "-b", "--factory-startup", "--offline-mode", "-noaudio", "--python", str(pathlib.Path(jd, "scene.py"))], capture_output=True, text=True, timeout=1800, cwd=str(jd))
+    except subprocess.TimeoutExpired: return {"ok": False, "error": "blender timed out (30 min), killed"}
+    render_sec = round(time.time() - t0, 1); info = ""
+    for line in r.stdout.splitlines():
+        if line.startswith("SW_RESULT "): info = line[10:][:120]
+    nfr = len(list(pathlib.Path(jd, "frames").glob("*.png")))
+    if r.returncode != 0 or nfr != secs * 24: return {"ok": False, "render_sec": render_sec, "frames": nfr, "error": "blender failed rc=%s: %s" % (r.returncode, ((r.stderr or "") + (r.stdout or ""))[-400:])}
+    out = pathlib.Path(jd, "out.mp4"); enc = None
+    for codec, extra in (("h264_nvenc", ["-preset", "p5", "-cq", "21"]), ("libx264", ["-preset", "medium", "-crf", "18"])):
+        cmd = [ff, "-hide_banner", "-loglevel", "error", "-y", "-protocol_whitelist", "file", "-framerate", "24", "-i", str(pathlib.Path(jd, "frames", "%04d.png")), "-c:v", codec] + extra + ["-pix_fmt", "yuv420p", "-movflags", "+faststart", str(out)]
+        e = subprocess.run(cmd, capture_output=True, text=True, timeout=300, cwd=str(jd))
+        if e.returncode == 0 and out.exists(): enc = codec; break
+    if not enc: return {"ok": False, "render_sec": render_sec, "error": "ffmpeg encode failed: " + (e.stderr or "")[:300]}
+    data = out.read_bytes()
+    return {"ok": True, "render_sec": render_sec, "encoder": enc, "frames": nfr, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(), "info": info, "_art": ("out.mp4", data)}
 
 def gpu_info():
     try:
