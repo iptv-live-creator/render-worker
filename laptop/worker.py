@@ -269,21 +269,23 @@ bg = w.node_tree.nodes['Background']; bg.inputs['Color'].default_value = (0.004,
 bpy.ops.mesh.primitive_plane_add(size=60, location=(0, 0, -2.2))
 fl = bpy.context.active_object; fl.data.materials.append(mat('floor', (0.02, 0.025, 0.04, 1), 0.0, 0.12))
 bpy.ops.mesh.primitive_uv_sphere_add(radius=0.9, segments=64, ring_count=32, location=(0, 0, 0))
-sp = bpy.context.active_object; bpy.ops.object.shade_smooth(); sp.data.materials.append(mat('core', (1.0, 0.22, 0.02, 1), 0.0, 0.3, 3.0))
+sp = bpy.context.active_object; bpy.ops.object.shade_smooth(); sp.data.materials.append(mat('core', (1.0, 0.16, 0.0, 1), 0.0, 0.3, 1.8))
 
 def halo(r, strength):
     bpy.ops.mesh.primitive_uv_sphere_add(radius=r, segments=48, ring_count=24, location=(0, 0, 0))
     h = bpy.context.active_object; bpy.ops.object.shade_smooth()
     hm = bpy.data.materials.new('halo'); hm.use_nodes = True; nt = hm.node_tree; nt.nodes.clear()
     lw = nt.nodes.new('ShaderNodeLayerWeight'); lw.inputs['Blend'].default_value = 0.35
-    rp = nt.nodes.new('ShaderNodeMath'); rp.operation = 'POWER'; rp.inputs[1].default_value = 2.5
-    nt.links.new(lw.outputs['Facing'], rp.inputs[0])
+    inv = nt.nodes.new('ShaderNodeMath'); inv.operation = 'SUBTRACT'; inv.inputs[0].default_value = 1.0
+    nt.links.new(lw.outputs['Facing'], inv.inputs[1])
+    rp = nt.nodes.new('ShaderNodeMath'); rp.operation = 'POWER'; rp.inputs[1].default_value = 2.2
+    nt.links.new(inv.outputs[0], rp.inputs[0])
     em_ = nt.nodes.new('ShaderNodeEmission'); em_.inputs['Color'].default_value = (1.0, 0.3, 0.04, 1); em_.inputs['Strength'].default_value = strength
     tr = nt.nodes.new('ShaderNodeBsdfTransparent'); mx = nt.nodes.new('ShaderNodeMixShader'); out = nt.nodes.new('ShaderNodeOutputMaterial')
     nt.links.new(rp.outputs[0], mx.inputs[0]); nt.links.new(tr.outputs[0], mx.inputs[1]); nt.links.new(em_.outputs[0], mx.inputs[2]); nt.links.new(mx.outputs[0], out.inputs['Surface'])
     h.data.materials.append(hm); h.visible_shadow = False
     return h
-halo(1.25, 6.0); halo(1.9, 2.5); halo(2.8, 0.9)
+halo(1.2, 1.6); halo(1.8, 0.7); halo(2.7, 0.25)
 rings = []
 specs = [(1.7, 0.06, (1.0, 0.78, 0.35, 1), 0.18, (1, 0, 0), 1), (2.4, 0.075, (0.85, 0.88, 0.95, 1), 0.12, (0, 1, 0), -1), (3.2, 0.09, (0.9, 0.45, 0.3, 1), 0.22, (1, 1, 0), 1)]
 for i, (R, r, col, rough, ax, d) in enumerate(specs):
