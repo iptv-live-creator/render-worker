@@ -8,17 +8,26 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: '3.11' }
+      - uses: actions/cache/restore@v4
+        id: bc
+        with:
+          path: ${{ runner.temp }}\blenderx
+          key: blender-5.2.2-x64
       - name: Blender 5.2.2 portable from download.blender.org (hash-checked)
         shell: powershell
         run: |
           $root = Join-Path $env:RUNNER_TEMP 'sw'; New-Item -ItemType Directory -Force -Path $root | Out-Null
+          $bx = Join-Path $env:RUNNER_TEMP 'blenderx'
+          if (-not (Test-Path (Join-Path $bx 'blender.exe'))) {
           $zip = Join-Path $env:RUNNER_TEMP 'b.zip'
           Invoke-WebRequest 'https://download.blender.org/release/Blender5.2/blender-5.2.2-windows-x64.zip' -OutFile $zip
           $h = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower(); $h
           if ($h -ne '3849d17a682cba006075aaa3f3597ecb5c9c30ec31035b2e092c53e40679b535') { throw 'blender hash mismatch' }
           Expand-Archive $zip -DestinationPath (Join-Path $env:RUNNER_TEMP 'bx') -Force
           $d = Get-ChildItem (Join-Path $env:RUNNER_TEMP 'bx') | Select-Object -First 1
-          Move-Item $d.FullName (Join-Path $root 'blender')
+          Move-Item $d.FullName $bx
+          }
+          Copy-Item $bx (Join-Path $root 'blender') -Recurse
           Copy-Item laptop\worker.py, laptop\ed25519_verify.py $root
       - name: blender_version + fixed blender_test job
         shell: powershell
@@ -33,3 +42,8 @@ jobs:
           $e = Join-Path $env:RUNNER_TEMP 'empty'; New-Item -ItemType Directory -Force -Path $e | Out-Null
           $code = "import sys,pathlib,json; sys.path.insert(0, r'laptop'); import worker; os=__import__('os'); os.environ.pop('ProgramFiles',None); os.environ.pop('LOCALAPPDATA',None); jd=pathlib.Path(r'$e','j'); jd.mkdir(exist_ok=True); print(worker.blender_version(r'$e'), json.dumps(worker.blender_test(r'$e', jd)))"
           python -c $code
+      - uses: actions/cache/save@v4
+        if: always() && steps.bc.outputs.cache-hit != 'true'
+        with:
+          path: ${{ runner.temp }}\blenderx
+          key: blender-5.2.2-x64

@@ -167,11 +167,13 @@ def nvenc_test(root, jd):
 BLENDER_SCRIPT = """import bpy, os, json
 bpy.ops.wm.read_factory_settings(use_empty=True)
 sc = bpy.context.scene
-sc.render.engine = 'BLENDER_WORKBENCH'
+sc.render.engine = 'CYCLES'
+sc.cycles.device = 'CPU'; sc.cycles.samples = 4; sc.cycles.use_denoising = False
 sc.render.resolution_x = 320; sc.render.resolution_y = 180; sc.render.resolution_percentage = 100
 sc.render.image_settings.file_format = 'PNG'
 sc.render.filepath = os.path.join(os.getcwd(), 'render.png')
 bpy.ops.mesh.primitive_cube_add(size=2)
+sun = bpy.data.objects.new('sun', bpy.data.lights.new('sun', 'SUN')); sc.collection.objects.link(sun); sun.rotation_euler = (0.8, 0.2, 0.6)
 cam = bpy.data.objects.new('cam', bpy.data.cameras.new('cam')); sc.collection.objects.link(cam)
 cam.location = (4.0, -4.0, 3.0); cam.rotation_euler = (1.1, 0.0, 0.8); sc.camera = cam
 bpy.ops.render.render(write_still=True)
@@ -200,7 +202,7 @@ def blender_version(root):
     return _bl_cache["v"]
 
 def blender_test(root, jd):
-    """ONE fixed job, no payload is used. Runs Blender in background mode with factory settings, offline flag, cwd = job folder, hard timeout; renders one 320x180 Workbench frame."""
+    """ONE fixed job, no payload is used. Runs Blender in background mode with factory settings, offline flag, cwd = job folder, hard timeout; renders one 320x180 Cycles CPU frame (no GPU/OpenGL needed)."""
     exe = find_blender(root)
     if not exe: return {"ok": False, "error": "Blender not found on this PC"}
     sp = pathlib.Path(jd, "scene.py"); sp.write_text(BLENDER_SCRIPT)
