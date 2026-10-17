@@ -269,7 +269,21 @@ bg = w.node_tree.nodes['Background']; bg.inputs['Color'].default_value = (0.004,
 bpy.ops.mesh.primitive_plane_add(size=60, location=(0, 0, -2.2))
 fl = bpy.context.active_object; fl.data.materials.append(mat('floor', (0.02, 0.025, 0.04, 1), 0.0, 0.12))
 bpy.ops.mesh.primitive_uv_sphere_add(radius=0.9, segments=64, ring_count=32, location=(0, 0, 0))
-sp = bpy.context.active_object; bpy.ops.object.shade_smooth(); sp.data.materials.append(mat('core', (1.0, 0.42, 0.08, 1), 0.0, 0.3, 2.4))
+sp = bpy.context.active_object; bpy.ops.object.shade_smooth(); sp.data.materials.append(mat('core', (1.0, 0.22, 0.02, 1), 0.0, 0.3, 3.0))
+
+def halo(r, strength):
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=r, segments=48, ring_count=24, location=(0, 0, 0))
+    h = bpy.context.active_object; bpy.ops.object.shade_smooth()
+    hm = bpy.data.materials.new('halo'); hm.use_nodes = True; nt = hm.node_tree; nt.nodes.clear()
+    lw = nt.nodes.new('ShaderNodeLayerWeight'); lw.inputs['Blend'].default_value = 0.35
+    rp = nt.nodes.new('ShaderNodeMath'); rp.operation = 'POWER'; rp.inputs[1].default_value = 2.5
+    nt.links.new(lw.outputs['Facing'], rp.inputs[0])
+    em_ = nt.nodes.new('ShaderNodeEmission'); em_.inputs['Color'].default_value = (1.0, 0.3, 0.04, 1); em_.inputs['Strength'].default_value = strength
+    tr = nt.nodes.new('ShaderNodeBsdfTransparent'); mx = nt.nodes.new('ShaderNodeMixShader'); out = nt.nodes.new('ShaderNodeOutputMaterial')
+    nt.links.new(rp.outputs[0], mx.inputs[0]); nt.links.new(tr.outputs[0], mx.inputs[1]); nt.links.new(em_.outputs[0], mx.inputs[2]); nt.links.new(mx.outputs[0], out.inputs['Surface'])
+    h.data.materials.append(hm); h.visible_shadow = False
+    return h
+halo(1.25, 6.0); halo(1.9, 2.5); halo(2.8, 0.9)
 rings = []
 specs = [(1.7, 0.06, (1.0, 0.78, 0.35, 1), 0.18, (1, 0, 0), 1), (2.4, 0.075, (0.85, 0.88, 0.95, 1), 0.12, (0, 1, 0), -1), (3.2, 0.09, (0.9, 0.45, 0.3, 1), 0.22, (1, 1, 0), 1)]
 for i, (R, r, col, rough, ax, d) in enumerate(specs):
@@ -294,10 +308,22 @@ def area(name, loc, energy, color, size):
     c = o.constraints.new('TRACK_TO'); c.target = sp; c.track_axis = 'TRACK_NEGATIVE_Z'; c.up_axis = 'UP_Y'
 area('key', (-5, -5, 5), 900, (1.0, 0.9, 0.8), 4)
 area('rim', (6, 4, 3), 700, (0.35, 0.55, 1.0), 5)
-pl = bpy.data.lights.new('glow', 'POINT'); pl.energy = 1200; pl.color = (1.0, 0.5, 0.15); pl.shadow_soft_size = 0.5
+pl = bpy.data.lights.new('glow', 'POINT'); pl.energy = 4500; pl.color = (1.0, 0.5, 0.15); pl.shadow_soft_size = 0.5
 po = bpy.data.objects.new('glow', pl); sc.collection.objects.link(po)
 try: sc.view_settings.view_transform = 'AgX'
 except Exception: pass
+
+try:
+    sc.use_nodes = True
+    ntc = sc.node_tree
+    for n_ in list(ntc.nodes): ntc.nodes.remove(n_)
+    rl = ntc.nodes.new('CompositorNodeRLayers'); gl = ntc.nodes.new('CompositorNodeGlare'); co = ntc.nodes.new('CompositorNodeComposite')
+    gl.glare_type = 'FOG_GLOW'; gl.quality = 'MEDIUM'
+    try: gl.threshold = 0.8; gl.size = 7
+    except Exception: pass
+    ntc.links.new(rl.outputs['Image'], gl.inputs['Image']); ntc.links.new(gl.outputs['Image'], co.inputs['Image'])
+except Exception as e:
+    print('SW_NOGLARE ' + str(e)[:80])
 bpy.ops.render.render(animation=True)
 print('SW_RESULT ' + json.dumps({'blender': bpy.app.version_string, 'device': dev, 'frames': N}))
 """
