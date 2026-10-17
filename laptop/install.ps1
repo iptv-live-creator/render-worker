@@ -18,7 +18,7 @@ try {
   $pth = Get-ChildItem (Join-Path $Root 'py') -Filter 'python*._pth' | Select-Object -First 1
   (Get-Content $pth.FullName) -replace '#import site','import site' | Set-Content $pth.FullName
   Remove-Item (Join-Path $Root 'STOP') -ErrorAction SilentlyContinue   # re-install after Stop.bat must start again
-  Copy-Item (Join-Path $PSScriptRoot 'worker.py') (Join-Path $Root 'worker.py') -Force
+  foreach ($f in 'worker.py','ed25519_verify.py','launcher.py') { Copy-Item (Join-Path $PSScriptRoot $f) (Join-Path $Root $f) -Force }
   Copy-Item (Join-Path $PSScriptRoot 'Stop.bat') (Join-Path $Root 'Stop.bat') -Force
   Copy-Item (Join-Path $PSScriptRoot 'Uninstall.bat') (Join-Path $Root 'Uninstall.bat') -Force
   $py = Join-Path $Root 'py\python.exe'

@@ -1,12 +1,19 @@
-"""Shaher laptop worker v1 (adds ONE fixed ffmpeg_test job; everything else still refused).
+"""Shaher laptop worker v2 (fixed jobs: ping, ffmpeg_test, nvenc_test; signed self-update; everything else refused).
 Outbound HTTPS only. Whitelisted job types. Signed jobs only. No shell, no arbitrary code from the bot.
 Usage: worker.py --enroll CODE --bot URL --root DIR   (one time)
        worker.py --run --bot URL --root DIR            (loop)"""
-import argparse, base64, hashlib, hmac, json, os, subprocess, sys, time, urllib.request, urllib.error, shutil, pathlib
+import argparse, base64, re, hashlib, hmac, json, os, subprocess, sys, time, urllib.request, urllib.error, shutil, pathlib
 
-ALLOWED = {"render", "browser_task", "wan_generate", "blender", "ping", "ffmpeg_test"}
-VERSION = 1
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+ALLOWED = {"render", "browser_task", "wan_generate", "blender", "ping", "ffmpeg_test", "nvenc_test"}
+VERSION = 2
 POLL_SECS = 20
+RESTART_CODE = 75
+# Release signing PUBLIC key (Ed25519). The private key is not on the bot server and not on this PC.
+PUBKEY = "9a80035809bf885c881a6df305918f2ed48e0c5b80598f46b202f8912b8144f1"
+UPDATE_EVERY = 900          # seconds between update checks
+UPDATABLE = {"worker.py", "ed25519_verify.py"}   # exact allow-list of files a signed manifest may replace
+MAX_FILE = 1_000_000
 
 def http(bot, path, token=None, body=None, timeout=40):
     req = urllib.request.Request(bot + path, data=json.dumps(body).encode() if body is not None else None,
@@ -35,6 +42,7 @@ def run_job(a, job):
     try:
         if t == "ping": return {"ok": True, "pong": time.time()}
         if t == "ffmpeg_test": return ffmpeg_test(a.root, jd)
+        if t == "nvenc_test": return nvenc_test(a.root, jd)
         if t == "render": return {"ok": False, "error": "render handler not implemented yet"}
         if t == "browser_task": return {"ok": False, "error": "browser_task handler not implemented yet"}
         if t == "wan_generate": return {"ok": False, "error": "WanGP not installed (needs Shaher's approval)"}
@@ -43,12 +51,69 @@ def run_job(a, job):
     finally:
         shutil.rmtree(jd, ignore_errors=True)
 
+
+# ---------------- signed self-update ----------------
+def _rj(path, default):
+    try: return json.loads(pathlib.Path(path).read_text())
+    except Exception: return default
+
+def current_seq(root): return int(_rj(pathlib.Path(root, "update_seq"), 0) or 0)
+
+def check_update(root, bot, pub_hex=PUBKEY, now=None, fetch=None):
+    """Returns (status, detail). Applies a new release ONLY if: signature valid for the pinned key, not expired, sequence strictly newer
+    than the installed one and not previously rolled back, every file name is in UPDATABLE, size and sha256 match. Never runs downloaded code here."""
+    from ed25519_verify import verify
+    now = now or time.time()
+    fetch = fetch or (lambda path: _http_bytes(bot + path))
+    try:
+        mb = fetch("/worker/release/manifest.json"); sig = bytes.fromhex(fetch("/worker/release/manifest.sig").decode().strip())
+    except Exception as e: return ("no-manifest", str(e)[:120])
+    if not verify(bytes.fromhex(pub_hex), mb, sig): return ("refused", "bad signature")
+    try: m = json.loads(mb.decode())
+    except Exception: return ("refused", "manifest not json")
+    seq = m.get("sequence"); exp = m.get("expires"); files = m.get("files")
+    if not isinstance(seq, int) or not isinstance(exp, (int, float)) or not isinstance(files, list) or not files: return ("refused", "bad manifest shape")
+    if exp < now: return ("refused", "manifest expired")
+    if seq <= current_seq(root): return ("current", "seq %d" % seq)
+    if seq in _rj(pathlib.Path(root, "bad_seqs.json"), []): return ("refused", "seq %d was rolled back before" % seq)
+    staged = {}
+    for f in files:
+        name, sha, size = f.get("name"), f.get("sha256"), f.get("size")
+        if name not in UPDATABLE or not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{64}", sha) or not isinstance(size, int) or size <= 0 or size > MAX_FILE:
+            return ("refused", "file not allowed: %s" % str(name)[:40])
+        try: data = fetch("/worker/release/files/" + name)
+        except Exception as e: return ("refused", "download failed: " + str(e)[:80])
+        if len(data) != size or hashlib.sha256(data).hexdigest() != sha: return ("refused", "hash/size mismatch for %s" % name)
+        if name.endswith(".py"):
+            try: compile(data, name, "exec")
+            except Exception: return ("refused", "does not compile: %s" % name)
+        staged[name] = data
+    r = pathlib.Path(root); bk = r / "backup"; shutil.rmtree(bk, ignore_errors=True); bk.mkdir()
+    for name in staged:
+        if (r / name).exists(): shutil.copy2(r / name, bk / name)
+    (r / "pending.json").write_text(json.dumps({"seq": seq, "prev_seq": current_seq(root), "files": sorted(staged)}))
+    for name, data in staged.items():
+        tmp = r / (name + ".new"); tmp.write_bytes(data); os.replace(tmp, r / name)
+    (r / "update_seq").write_text(str(seq))
+    return ("applied", "seq %d files %s" % (seq, ",".join(sorted(staged))))
+
+def _http_bytes(url, timeout=40):
+    with urllib.request.urlopen(urllib.request.Request(url), timeout=timeout) as r: return r.read(MAX_FILE + 1)
+
+def mark_healthy(root):
+    p = pathlib.Path(root, "healthy.json"); seq = current_seq(root)
+    if _rj(p, {}).get("seq") != seq: p.write_text(json.dumps({"seq": seq, "t": time.time()}))
+
 def loop(a):
     tok = pathlib.Path(a.root, "token").read_text().strip(); key = pathlib.Path(a.root, "signkey").read_text().strip()
-    stop = pathlib.Path(a.root, "STOP")
+    stop = pathlib.Path(a.root, "STOP"); last_upd = 0
     while not stop.exists():
         try:
-            r = http(a.bot, "/worker/poll", token=tok, body={"gpu": gpu_info(), "v": VERSION, "ffmpeg": bool(find_ffmpeg(a.root))})
+            if a.supervised and time.time() - last_upd > UPDATE_EVERY:
+                last_upd = time.time(); st, det = check_update(a.root, a.bot); log(a.root, "update check: %s %s" % (st, det))
+                if st == "applied": log(a.root, "restarting into new release"); sys.exit(RESTART_CODE)
+            r = http(a.bot, "/worker/poll", token=tok, body={"gpu": gpu_info(), "v": VERSION, "seq": current_seq(a.root), "supervised": bool(a.supervised), "ffmpeg": bool(find_ffmpeg(a.root))})
+            if a.supervised: mark_healthy(a.root)
             job = r.get("job")
             if job:
                 if job.get("type") not in ALLOWED or not verify(job, key):
@@ -58,6 +123,7 @@ def loop(a):
                 res = run_job(a, job)
                 http(a.bot, "/worker/result", token=tok, body={"id": job["id"], **res}); log(a.root, "job %s done ok=%s" % (job["id"], res.get("ok")))
                 continue
+        except SystemExit: raise
         except Exception as e:
             log(a.root, "poll error: " + str(e)[:200])
         time.sleep(POLL_SECS)
@@ -84,13 +150,25 @@ def ffmpeg_test(root, jd):
     res["nvenc"] = "h264_nvenc" in e.stdout
     return {"ok": True, **res}
 
+def nvenc_test(root, jd):
+    """ONE fixed command, no payload is used. Tries h264_nvenc on a synthetic input; output only inside the job work folder."""
+    ff = find_ffmpeg(root)
+    if not ff: return {"ok": False, "error": "ffmpeg not found"}
+    out = pathlib.Path(jd, "nv.mp4")
+    cmd = [ff, "-hide_banner", "-loglevel", "error", "-y", "-protocol_whitelist", "file", "-f", "lavfi", "-i", "testsrc=duration=2:size=640x360:rate=30",
+           "-c:v", "h264_nvenc", "-pix_fmt", "yuv420p", str(out)]
+    t0 = time.time(); r = subprocess.run(cmd, capture_output=True, text=True, timeout=90, cwd=str(jd)); sec = round(time.time() - t0, 2)
+    if r.returncode != 0 or not out.exists(): return {"ok": False, "encode_sec": sec, "error": "nvenc failed: " + (r.stderr or "")[:400]}
+    data = out.read_bytes()
+    return {"ok": True, "encode_sec": sec, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(), "gpu": gpu_info()}
+
 def gpu_info():
     try:
         return subprocess.run(["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"], capture_output=True, text=True, timeout=8).stdout.strip() or "none"
     except Exception: return "none"
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(); ap.add_argument("--enroll"); ap.add_argument("--run", action="store_true"); ap.add_argument("--bot", required=True); ap.add_argument("--root", required=True)
+    ap = argparse.ArgumentParser(); ap.add_argument("--enroll"); ap.add_argument("--run", action="store_true"); ap.add_argument("--bot", required=True); ap.add_argument("--root", required=True); ap.add_argument("--supervised", action="store_true")
     a = ap.parse_args(); os.makedirs(a.root, exist_ok=True)
     if a.enroll: enroll(a)
     elif a.run: loop(a)
