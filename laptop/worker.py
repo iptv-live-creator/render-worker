@@ -6,7 +6,7 @@ import threading, argparse, base64, re, hashlib, hmac, json, os, subprocess, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 ALLOWED = {"render", "browser_task", "wan_generate", "blender", "ping", "ffmpeg_test", "nvenc_test", "blender_test", "blender_video"}
-VERSION = 12
+VERSION = 13
 POLL_SECS = 20
 RESTART_CODE = 75
 # Release signing PUBLIC key (Ed25519). The private key is not on the bot server and not on this PC.
@@ -352,7 +352,9 @@ print('SW_RESULT ' + json.dumps({'blender': bpy.app.version_string, 'device': de
 """
 BAAD_SCRIPT = """import bpy, os, json, math
 P = json.load(open(os.path.join(os.getcwd(), 'params.json')))
+GEO = json.load(open(os.path.join(os.getcwd(), 'geo.json')))
 FPS = 24; N = P['seconds'] * FPS
+HL = set(P.get('countries') or ['EGY'])
 bpy.ops.wm.read_factory_settings(use_empty=True)
 sc = bpy.context.scene
 sc.render.fps = FPS; sc.frame_start = 1; sc.frame_end = N
@@ -380,68 +382,101 @@ except Exception as e:
     dev = 'CPU'; dev_err = str(e)[:150]
 print('SW_DEVICE ' + dev + ' ' + str(dev_list) + ' ' + dev_err, flush=True)
 if dev == 'CPU' and not P.get('allow_cpu_dev'): raise SystemExit(3)
-def principled(name, color, rough=0.5, metal=0.0):
-    m = bpy.data.materials.new(name); m.use_nodes = True; b = m.node_tree.nodes['Principled BSDF']
-    b.inputs['Base Color'].default_value = color; b.inputs['Roughness'].default_value = rough; b.inputs['Metallic'].default_value = metal
-    return m
-def emit_mat(name, color, strength):
+SX = 0.1
+RR = 36.0 / (2 * math.pi)
+def mx(lon): return lon * SX
+def my(lat):
+    lat = max(-84, min(84, lat)); return RR * math.log(math.tan(math.pi / 4 + math.radians(lat) / 2))
+def solid(name, color, rough=0.55, emit=0.0):
     m = bpy.data.materials.new(name); m.use_nodes = True; nt = m.node_tree; nt.nodes.clear()
-    e = nt.nodes.new('ShaderNodeEmission'); e.inputs['Color'].default_value = color; e.inputs['Strength'].default_value = strength
-    o = nt.nodes.new('ShaderNodeOutputMaterial'); nt.links.new(e.outputs[0], o.inputs['Surface']); return m
-# pitch: striped grass via brick/checker-like wave texture
-bpy.ops.mesh.primitive_plane_add(size=120, location=(0, 0, 0))
-pitch = bpy.context.active_object
-pm = bpy.data.materials.new('grass'); pm.use_nodes = True; nt = pm.node_tree; b = nt.nodes['Principled BSDF']; b.inputs['Roughness'].default_value = 0.85
-wv = nt.nodes.new('ShaderNodeTexWave'); wv.wave_type = 'BANDS'; wv.bands_direction = 'Y'; wv.inputs['Scale'].default_value = 0.35; wv.inputs['Distortion'].default_value = 0.0
-tc = nt.nodes.new('ShaderNodeTexCoord'); nt.links.new(tc.outputs['Object'], wv.inputs['Vector'])
-cr = nt.nodes.new('ShaderNodeValToRGB'); cr.color_ramp.interpolation = 'CONSTANT'; cr.color_ramp.elements[0].color = (0.03, 0.26, 0.05, 1); cr.color_ramp.elements[1].color = (0.05, 0.36, 0.07, 1); cr.color_ramp.elements[1].position = 0.5
-nt.links.new(wv.outputs['Fac'], cr.inputs['Fac']); nt.links.new(cr.outputs['Color'], b.inputs['Base Color'])
-pitch.data.materials.append(pm)
-# white lines (thin emissive-less white planes)
-def line(x0, y0, x1, y1, w=0.18):
-    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2; ln = math.hypot(x1 - x0, y1 - y0)
-    bpy.ops.mesh.primitive_plane_add(size=1, location=(cx, cy, 0.01)); o = bpy.context.active_object
-    o.scale = (ln, w, 1); o.rotation_euler[2] = math.atan2(y1 - y0, x1 - x0); o.data.materials.append(principled('line', (0.9, 0.9, 0.9, 1), 0.6))
-line(-9, 0, 9, 0)
-bpy.ops.mesh.primitive_torus_add(major_radius=3.2, minor_radius=0.09, major_segments=96, minor_segments=8, location=(0, 0, 0.02))
-c = bpy.context.active_object; c.scale[2] = 0.2; c.data.materials.append(principled('line', (0.9, 0.9, 0.9, 1), 0.6))
-line(-9, -14, -9, 14); line(9, -14, 9, 14); line(-9, 14, 9, 14); line(-9, -14, 9, -14)
-# ball with voronoi patches
-bpy.ops.mesh.primitive_uv_sphere_add(radius=0.5, segments=64, ring_count=32, location=(0, -6, 0.5)); ball = bpy.context.active_object; bpy.ops.object.shade_smooth()
-bm = bpy.data.materials.new('ball'); bm.use_nodes = True; nt = bm.node_tree; b = nt.nodes['Principled BSDF']; b.inputs['Roughness'].default_value = 0.3
-vo = nt.nodes.new('ShaderNodeTexVoronoi'); vo.feature = 'DISTANCE_TO_EDGE'; vo.inputs['Scale'].default_value = 3.2
-tc2 = nt.nodes.new('ShaderNodeTexCoord'); nt.links.new(tc2.outputs['Object'], vo.inputs['Vector'])
-rp = nt.nodes.new('ShaderNodeValToRGB'); rp.color_ramp.interpolation = 'CONSTANT'; rp.color_ramp.elements[0].color = (0.02, 0.02, 0.02, 1); rp.color_ramp.elements[1].color = (0.95, 0.95, 0.95, 1); rp.color_ramp.elements[1].position = 0.045
-nt.links.new(vo.outputs['Distance'], rp.inputs['Fac']); nt.links.new(rp.outputs['Color'], b.inputs['Base Color'])
+    o = nt.nodes.new('ShaderNodeOutputMaterial')
+    if emit > 0:
+        e = nt.nodes.new('ShaderNodeEmission'); e.inputs['Color'].default_value = color; e.inputs['Strength'].default_value = emit
+        nt.links.new(e.outputs[0], o.inputs['Surface'])
+    else:
+        b = nt.nodes.new('ShaderNodeBsdfPrincipled'); b.inputs['Base Color'].default_value = color; b.inputs['Roughness'].default_value = rough
+        nt.links.new(b.outputs[0], o.inputs['Surface'])
+    return m
+def curve_obj(name, rings, ext, mat):
+    cu = bpy.data.curves.new(name, 'CURVE'); cu.dimensions = '2D'; cu.fill_mode = 'BOTH'; cu.extrude = ext
+    for ring in rings:
+        if len(ring) < 4: continue
+        sp = cu.splines.new('POLY'); sp.points.add(len(ring) - 1)
+        for i, (lon, lat) in enumerate(ring): sp.points[i].co = (mx(lon), my(lat), 0, 1)
+        sp.use_cyclic_u = True
+    ob = bpy.data.objects.new(name, cu); sc.collection.objects.link(ob); cu.materials.append(mat); return ob
+land, hl = [], []
+for iso, polys in GEO:
+    if iso == 'ATA': continue
+    (hl if iso in HL else land).append((iso, polys))
+PAL = [(0.07, 0.20, 0.27, 1), (0.10, 0.26, 0.24, 1), (0.17, 0.22, 0.36, 1), (0.30, 0.28, 0.22, 1), (0.13, 0.15, 0.30, 1), (0.18, 0.31, 0.29, 1), (0.26, 0.19, 0.24, 1), (0.12, 0.28, 0.38, 1)]
+PM = [solid('land%d' % i, c, 0.7) for i, c in enumerate(PAL)]
+def hsh(iso): return (ord(iso[0]) * 7 + ord(iso[1]) * 13 + ord(iso[2]) * 31) % len(PM)
+for iso, polys in land:
+    ob_ = curve_obj('c_' + iso, polys, 0.05, PM[hsh(iso)]); ob_.data.bevel_depth = 0.012
+hobs = []; olobs = []; CEN = {}; ORDER = list(P.get('countries') or ['EGY'])
+tx = ty = 0.0; cnt = 0
+for iso, polys in hl:
+    hcol = (1.0, 0.30, 0.03, 1) if iso == ORDER[0] else (0.05, 0.75, 0.42, 1)
+    ob = curve_obj('hl_' + iso, polys, 0.25, solid('hl_' + iso, hcol, 0, 1.5)); hobs.append(ob); ob['iso'] = iso
+    olc = curve_obj('ol_' + iso, polys, 0.0, solid('ol', (1.0, 0.75, 0.4, 1), 0, 3.0)); olc.data.fill_mode = 'NONE'; olc.data.bevel_depth = 0.02; olc.data.bevel_resolution = 0; olobs.append(olc)
+    big = max(polys, key=lambda r: len(r)); cx = sum(p[0] for p in big) / len(big); cy = sum(p[1] for p in big) / len(big)
+    tx += mx(cx); ty += my(cy); cnt += 1; CEN[iso] = (mx(cx), my(cy))
+if cnt: tx /= cnt; ty /= cnt
+else: tx, ty = 0, 10
+bpy.ops.mesh.primitive_plane_add(size=400, location=(0, 0, -0.3))
+sea = bpy.context.active_object; sea.data.materials.append(solid('sea', (0.015, 0.04, 0.10, 1), 0.5))
+bpy.context.preferences.edit.keyframe_new_interpolation_type = 'BEZIER'
+for ob in hobs:
+    late = ob['iso'] != ORDER[0]
+    ob.scale[2] = 0.02; ob.keyframe_insert('scale', frame=int(N * 0.8) if late else 1)
+    ob.scale[2] = 0.02 if late else 1.0; ob.keyframe_insert('scale', frame=int(N * 0.8) if late else int(N * 0.35))
+    ob.scale[2] = 1.0 if late else 1.4; ob.keyframe_insert('scale', frame=N if late else N)
+for ob in olobs:
+    ob.location[2] = 0.3; ob.keyframe_insert('location', frame=1)
+cd = bpy.data.cameras.new('cam'); cd.lens = 38
+cam = bpy.data.objects.new('cam', cd); sc.collection.objects.link(cam); sc.camera = cam
+tgt = bpy.data.objects.new('tgt', None); sc.collection.objects.link(tgt)
+tc = cam.constraints.new('TRACK_TO'); tc.target = tgt; tc.track_axis = 'TRACK_NEGATIVE_Z'; tc.up_axis = 'UP_Y'
+cam.location = (0, -18, 52); cam.keyframe_insert('location', frame=1)
+tgt.location = (0, 6, 0); tgt.keyframe_insert('location', frame=1)
+cam.location = (tx, ty - 7.5, 11.5); cam.keyframe_insert('location', frame=N)
+tgt.location = (tx, ty, 0); tgt.keyframe_insert('location', frame=N)
+sun = bpy.data.lights.new('sun', 'SUN'); sun.energy = 2.0; sun.angle = math.radians(4)
+so = bpy.data.objects.new('sun', sun); sc.collection.objects.link(so); so.rotation_euler = (math.radians(50), 0, math.radians(-30))
+w = bpy.data.worlds.new('w'); sc.world = w; w.use_nodes = True
+w.node_tree.nodes['Background'].inputs['Color'].default_value = (0.02, 0.05, 0.12, 1); w.node_tree.nodes['Background'].inputs['Strength'].default_value = 0.3
+try: sc.view_settings.view_transform = 'Standard'
+except Exception: pass
+
+CE = CEN.get(ORDER[0], (tx, ty)); CT = CEN.get(ORDER[1], (tx, ty - 6)) if len(ORDER) > 1 else (tx, ty - 6)
+bpy.ops.mesh.primitive_uv_sphere_add(radius=0.6, segments=48, ring_count=24, location=(CE[0], CE[1], 1.0)); ball = bpy.context.active_object; bpy.ops.object.shade_smooth()
+bm = bpy.data.materials.new('ball'); bm.use_nodes = True; nb = bm.node_tree; bb = nb.nodes['Principled BSDF']; bb.inputs['Roughness'].default_value = 0.3
+vo = nb.nodes.new('ShaderNodeTexVoronoi'); vo.feature = 'DISTANCE_TO_EDGE'; vo.inputs['Scale'].default_value = 3.2
+tc2 = nb.nodes.new('ShaderNodeTexCoord'); nb.links.new(tc2.outputs['Object'], vo.inputs['Vector'])
+rp = nb.nodes.new('ShaderNodeValToRGB'); rp.color_ramp.interpolation = 'CONSTANT'; rp.color_ramp.elements[0].color = (0.02, 0.02, 0.02, 1); rp.color_ramp.elements[1].color = (0.95, 0.95, 0.95, 1); rp.color_ramp.elements[1].position = 0.045
+nb.links.new(vo.outputs['Distance'], rp.inputs['Fac']); nb.links.new(rp.outputs['Color'], bb.inputs['Base Color'])
 ball.data.materials.append(bm)
 bpy.context.preferences.edit.keyframe_new_interpolation_type = 'LINEAR'
-# ball path: bounces toward camera-left goal line, spinning
-import random
-for f in range(1, N + 2, 2):
-    t = (f - 1) / N
-    ball.location = (math.sin(t * 5.0) * 2.2, -6 + t * 11.0, 0.5 + abs(math.sin(t * math.pi * 6)) * 2.2 * (1 - 0.5 * t))
-    ball.rotation_euler = (t * 24, t * 9, 0)
+f0, f1 = int(N * 0.30), int(N * 0.82)
+for f in range(1, N + 1):
+    u = 0.0 if f <= f0 else 1.0 if f >= f1 else (f - f0) / float(f1 - f0)
+    ball.location = (CE[0] + (CT[0] - CE[0]) * u, CE[1] + (CT[1] - CE[1]) * u, 0.8 + 0.4 + 3.2 * abs(math.sin(math.pi * 3.0 * u)) * (1 - 0.25 * u))
+    ball.rotation_euler = (u * 14.0, u * 9.0, 0)
     ball.keyframe_insert('location', frame=f); ball.keyframe_insert('rotation_euler', frame=f)
-# camera: low, follows behind
-cd = bpy.data.cameras.new('cam'); cd.lens = 35; cd.dof.use_dof = True; cd.dof.focus_object = ball; cd.dof.aperture_fstop = 2.4
-cam = bpy.data.objects.new('cam', cd); sc.collection.objects.link(cam); sc.camera = cam
-tg = bpy.data.objects.new('tg', None); sc.collection.objects.link(tg)
-tk = cam.constraints.new('TRACK_TO'); tk.target = tg; tk.track_axis = 'TRACK_NEGATIVE_Z'; tk.up_axis = 'UP_Y'
-for f in range(1, N + 2, 4):
-    t = (f - 1) / N
-    cam.location = (-3.0 + t * 2.6, -10 + t * 7.0, 2.6 + t * 0.4); cam.keyframe_insert('location', frame=f)
-    tg.location = (math.sin(t * 5.0) * 1.8, -6 + t * 11.0 + 2.0, 0.9); tg.keyframe_insert('location', frame=f)
-kl = bpy.data.lights.new('bk', 'POINT'); kl.energy = 350; kl.color = (1.0, 0.9, 0.75); kl.shadow_soft_size = 0.6
-ko = bpy.data.objects.new('bk', kl); sc.collection.objects.link(ko); ko.parent = ball; ko.location = (0.0, -1.6, 1.8)
-# floodlights: glowing emissive panels + real lights
-def flood(x, y, z):
-    l = bpy.data.lights.new('fl', 'AREA'); l.energy = 16000; l.size = 3; l.color = (1.0, 0.93, 0.8)
-    lo = bpy.data.objects.new('fl', l); sc.collection.objects.link(lo); lo.location = (x, y, z - 0.5); lo.rotation_euler = (math.radians(25), 0, 0)
-flood(-14, 24, 12); flood(14, 24, 12); flood(0, 28, 14)
-w = bpy.data.worlds.new('w'); sc.world = w; w.use_nodes = True
-w.node_tree.nodes['Background'].inputs['Color'].default_value = (0.02, 0.035, 0.09, 1); w.node_tree.nodes['Background'].inputs['Strength'].default_value = 1.0
-try: sc.view_settings.view_transform = 'AgX'
-except Exception: pass
+bl = bpy.data.lights.new('bl', 'POINT'); bl.energy = 45; bl.color = (1.0, 0.95, 0.85); bo = bpy.data.objects.new('bl', bl); sc.collection.objects.link(bo)
+bo.parent = ball; bo.location = (0, 0, 1.2)
+try:
+    sc.use_nodes = True
+    ntc = sc.node_tree
+    for n_ in list(ntc.nodes): ntc.nodes.remove(n_)
+    rl = ntc.nodes.new('CompositorNodeRLayers'); gl = ntc.nodes.new('CompositorNodeGlare'); co = ntc.nodes.new('CompositorNodeComposite')
+    gl.glare_type = 'FOG_GLOW'; gl.quality = 'MEDIUM'
+    try: gl.threshold = 1.0; gl.size = 6
+    except Exception: pass
+    ntc.links.new(rl.outputs['Image'], gl.inputs['Image']); ntc.links.new(gl.outputs['Image'], co.inputs['Image'])
+except Exception as e:
+    print('SW_NOGLARE ' + str(e)[:80])
 if P.get('still'):
     sc.frame_set(P['still']); sc.render.filepath = os.path.join(os.getcwd(), 'still.png'); bpy.ops.render.render(write_still=True)
 else:
@@ -568,10 +603,10 @@ def blender_video(root, jd, payload):
     w, h = VIDEO_RES[res]; samples = int(payload.get("samples", 48)) if isinstance(payload.get("samples", 48), int) and 4 <= payload.get("samples", 48) <= 128 else 48
     pathlib.Path(jd, "frames").mkdir(exist_ok=True)
     prm = {"seconds": secs, "w": w, "h": h, "samples": samples}
-    if preset == "atlas_map":
+    if preset in ("atlas_map", "baad_style"):
         import zlib
         geo = json.loads(zlib.decompress(base64.b64decode(ATLAS_GEO_Z)).decode()); known = {g[0] for g in geo}
-        cs = payload.get("countries", ["EGY"])
+        cs = payload.get("countries", ["EGY", "ETH"] if preset == "baad_style" else ["EGY"])
         if not isinstance(cs, list) or not (1 <= len(cs) <= 6) or not all(isinstance(c, str) and re.fullmatch(r"[A-Z]{3}", c) and c in known for c in cs):
             return {"ok": False, "error": "invalid countries (1-6 ISO3 codes)"}
         prm["countries"] = cs; pathlib.Path(jd, "geo.json").write_text(json.dumps(geo))
