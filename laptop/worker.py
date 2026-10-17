@@ -1,10 +1,11 @@
-"""Shaher laptop worker (DRAFT v0, untested on Windows).
+"""Shaher laptop worker v1 (adds ONE fixed ffmpeg_test job; everything else still refused).
 Outbound HTTPS only. Whitelisted job types. Signed jobs only. No shell, no arbitrary code from the bot.
 Usage: worker.py --enroll CODE --bot URL --root DIR   (one time)
        worker.py --run --bot URL --root DIR            (loop)"""
 import argparse, base64, hashlib, hmac, json, os, subprocess, sys, time, urllib.request, urllib.error, shutil, pathlib
 
-ALLOWED = {"render", "browser_task", "wan_generate", "blender", "ping"}
+ALLOWED = {"render", "browser_task", "wan_generate", "blender", "ping", "ffmpeg_test"}
+VERSION = 1
 POLL_SECS = 20
 
 def http(bot, path, token=None, body=None, timeout=40):
@@ -33,6 +34,7 @@ def run_job(a, job):
     t = job["type"]; jd = pathlib.Path(a.root, "jobs", job["id"]); jd.mkdir(parents=True, exist_ok=True)
     try:
         if t == "ping": return {"ok": True, "pong": time.time()}
+        if t == "ffmpeg_test": return ffmpeg_test(a.root, jd)
         if t == "render": return {"ok": False, "error": "render handler not implemented yet"}
         if t == "browser_task": return {"ok": False, "error": "browser_task handler not implemented yet"}
         if t == "wan_generate": return {"ok": False, "error": "WanGP not installed (needs Shaher's approval)"}
@@ -46,7 +48,7 @@ def loop(a):
     stop = pathlib.Path(a.root, "STOP")
     while not stop.exists():
         try:
-            r = http(a.bot, "/worker/poll", token=tok, body={"gpu": gpu_info(), "v": 0})
+            r = http(a.bot, "/worker/poll", token=tok, body={"gpu": gpu_info(), "v": VERSION, "ffmpeg": bool(find_ffmpeg(a.root))})
             job = r.get("job")
             if job:
                 if job.get("type") not in ALLOWED or not verify(job, key):
@@ -60,6 +62,27 @@ def loop(a):
             log(a.root, "poll error: " + str(e)[:200])
         time.sleep(POLL_SECS)
     log(a.root, "STOP file found, exiting")
+
+def find_ffmpeg(root):
+    p = pathlib.Path(root, "ffmpeg", "bin", "ffmpeg.exe")
+    if p.exists(): return str(p)
+    return shutil.which("ffmpeg")
+
+def ffmpeg_test(root, jd):
+    """ONE fixed command, no payload is used. Input is a synthetic test pattern, output goes only inside the job work folder, file protocol only (no network)."""
+    ff = find_ffmpeg(root)
+    if not ff: return {"ok": False, "error": "ffmpeg not found (run Update.bat)"}
+    out = pathlib.Path(jd, "test.mp4"); res = {"ffmpeg": ff}
+    v = subprocess.run([ff, "-hide_banner", "-version"], capture_output=True, text=True, timeout=20, cwd=str(jd))
+    res["version"] = (v.stdout.splitlines() or ["?"])[0][:120]
+    cmd = [ff, "-hide_banner", "-loglevel", "error", "-y", "-protocol_whitelist", "file", "-f", "lavfi", "-i", "testsrc=duration=2:size=320x180:rate=15",
+           "-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(out)]
+    t0 = time.time(); r = subprocess.run(cmd, capture_output=True, text=True, timeout=90, cwd=str(jd)); res["encode_sec"] = round(time.time() - t0, 2)
+    if r.returncode != 0 or not out.exists(): return {"ok": False, "error": "ffmpeg failed: " + (r.stderr or "")[:300], **res}
+    data = out.read_bytes(); res["bytes"] = len(data); res["sha256"] = hashlib.sha256(data).hexdigest()
+    e = subprocess.run([ff, "-hide_banner", "-encoders"], capture_output=True, text=True, timeout=20, cwd=str(jd))
+    res["nvenc"] = "h264_nvenc" in e.stdout
+    return {"ok": True, **res}
 
 def gpu_info():
     try:
