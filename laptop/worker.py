@@ -6,7 +6,7 @@ import argparse, base64, re, hashlib, hmac, json, os, subprocess, sys, time, url
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 ALLOWED = {"render", "browser_task", "wan_generate", "blender", "ping", "ffmpeg_test", "nvenc_test", "blender_test"}
-VERSION = 3
+VERSION = 4
 POLL_SECS = 20
 RESTART_CODE = 75
 # Release signing PUBLIC key (Ed25519). The private key is not on the bot server and not on this PC.
@@ -105,6 +105,15 @@ def mark_healthy(root):
     p = pathlib.Path(root, "healthy.json"); seq = current_seq(root)
     if _rj(p, {}).get("seq") != seq: p.write_text(json.dumps({"seq": seq, "t": time.time()}))
 
+MAX_ART = 8_000_000
+def upload_artifact(a, tok, jid, name, data):
+    """Sends ONE result file (made by a fixed job, <= 8 MB) to the bot in chunks. Outbound only."""
+    if len(data) > MAX_ART: raise ValueError("artifact too big")
+    step = 250_000; chunks = [data[i:i + step] for i in range(0, len(data), step)] or [b""]
+    for i, c in enumerate(chunks):
+        http(a.bot, "/worker/artifact", token=tok, body={"id": jid, "idx": i, "total": len(chunks), "b64": base64.b64encode(c).decode()}, timeout=60)
+    return {"name": name, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(), "chunks": len(chunks)}
+
 def loop(a):
     tok = pathlib.Path(a.root, "token").read_text().strip(); key = pathlib.Path(a.root, "signkey").read_text().strip()
     stop = pathlib.Path(a.root, "STOP"); last_upd = 0
@@ -122,6 +131,10 @@ def loop(a):
                     http(a.bot, "/worker/result", token=tok, body={"id": job.get("id"), "ok": False, "error": "rejected"}); continue
                 log(a.root, "job %s %s start; payload=%s" % (job["id"], job["type"], json.dumps(job["payload"], ensure_ascii=False)[:2000]))
                 res = run_job(a, job)
+                art = res.pop("_art", None)
+                if art:
+                    try: res["artifact"] = upload_artifact(a, tok, job["id"], art[0], art[1])
+                    except Exception as e: res["artifact_error"] = str(e)[:150]
                 http(a.bot, "/worker/result", token=tok, body={"id": job["id"], **res}); log(a.root, "job %s done ok=%s" % (job["id"], res.get("ok")))
                 continue
         except SystemExit: raise
@@ -215,7 +228,7 @@ def blender_test(root, jd):
     data = out.read_bytes(); ver = ""
     for line in r.stdout.splitlines():
         if line.startswith("SW_RESULT "): ver = line[10:][:80]
-    return {"ok": True, "render_sec": sec, "bytes": len(data), "png": data[:8] == b"\x89PNG\r\n\x1a\n", "sha256": hashlib.sha256(data).hexdigest(), "info": ver}
+    return {"ok": True, "render_sec": sec, "bytes": len(data), "png": data[:8] == b"\x89PNG\r\n\x1a\n", "sha256": hashlib.sha256(data).hexdigest(), "info": ver, "_art": ("render.png", data)}
 
 def gpu_info():
     try:
