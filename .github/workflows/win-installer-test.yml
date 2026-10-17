@@ -1,0 +1,36 @@
+name: win-installer-test
+on:
+  workflow_dispatch:
+    inputs:
+      bot_url:
+        description: staging bot url
+        required: true
+      code:
+        description: one-time enroll code (single use, 1h)
+        required: true
+jobs:
+  win:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          Invoke-ScriptAnalyzer -Path laptop/install.ps1 -Severity Error,Warning | Format-Table -AutoSize | Out-String -Width 200
+      - name: Install (no scheduled task) and enroll
+        shell: powershell
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'sw'
+          & .\laptop\install.ps1 -BotUrl '${{ github.event.inputs.bot_url }}' -Code '${{ github.event.inputs.code }}' -RootDir $root -NoTask
+          Get-Content (Join-Path $root 'worker.log')
+          if (-not (Select-String -Path (Join-Path $root 'worker.log') -Pattern 'enrolled' -Quiet)) { throw 'not enrolled' }
+      - name: Run worker 45s and show log
+        shell: powershell
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'sw'
+          $py = Join-Path $root 'py\python.exe'
+          $p = Start-Process $py -ArgumentList ('"' + (Join-Path $root 'worker.py') + '" --run --bot ${{ github.event.inputs.bot_url }} --root "' + $root + '"') -PassThru -NoNewWindow
+          Start-Sleep 45
+          Stop-Process $p -Force
+          Get-Content (Join-Path $root 'worker.log')
