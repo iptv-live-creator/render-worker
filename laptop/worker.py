@@ -123,7 +123,7 @@ def loop(a):
             if a.supervised and time.time() - last_upd > UPDATE_EVERY:
                 last_upd = time.time(); st, det = check_update(a.root, a.bot); log(a.root, "update check: %s %s" % (st, det))
                 if st == "applied": log(a.root, "restarting into new release"); sys.exit(RESTART_CODE)
-            r = http(a.bot, "/worker/poll", token=tok, body={"gpu": gpu_info(), "v": VERSION, "seq": current_seq(a.root), "supervised": bool(a.supervised), "ffmpeg": bool(find_ffmpeg(a.root)), "blender": blender_version(a.root)})
+            r = http(a.bot, "/worker/poll", token=tok, body={"gpu": gpu_info(), "v": VERSION, "seq": current_seq(a.root), "supervised": bool(a.supervised), "ffmpeg": bool(find_ffmpeg(a.root)), "blender": blender_version(a.root), "resolve": resolve_info()})
             if a.supervised: mark_healthy(a.root)
             job = r.get("job")
             if job:
@@ -277,12 +277,11 @@ for i, (R, r, col, rough, ax, d) in enumerate(specs):
     o = bpy.context.active_object; bpy.ops.object.shade_smooth(); o.data.materials.append(mat('ring%d' % i, col, 1.0, rough))
     o.rotation_euler = (math.radians(70 + 20 * i), math.radians(15 * i), 0)
     rings.append((o, d, [1, 1, 2][i]))
+bpy.context.preferences.edit.keyframe_new_interpolation_type = 'LINEAR'
 for o, d, k in rings:
     o.keyframe_insert('rotation_euler', frame=1)
     o.rotation_euler[2] += d * 2 * math.pi * k
     o.keyframe_insert('rotation_euler', frame=N + 1)
-    for fc in o.animation_data.action.fcurves:
-        for kp in fc.keyframe_points: kp.interpolation = 'LINEAR'
 em = bpy.data.objects.new('pivot', None); sc.collection.objects.link(em)
 cd = bpy.data.cameras.new('cam'); cd.lens = 42; cd.dof.use_dof = True; cd.dof.focus_object = sp; cd.dof.aperture_fstop = 3.2
 cam = bpy.data.objects.new('cam', cd); sc.collection.objects.link(cam); cam.parent = em; cam.location = (0, -9.5, 2.6); sc.camera = cam
@@ -331,6 +330,22 @@ def blender_video(root, jd, payload):
     if not enc: return {"ok": False, "render_sec": render_sec, "error": "ffmpeg encode failed: " + (e.stderr or "")[:300]}
     data = out.read_bytes()
     return {"ok": True, "render_sec": render_sec, "encoder": enc, "frames": nfr, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(), "info": info, "_art": ("out.mp4", data)}
+
+_rs_cache = {"t": 0, "v": False}
+def resolve_info():
+    """Read-only detection of DaVinci Resolve (fixed Program Files path). Returns 'path | version' or False. Cached 10 min. Runs no Resolve code."""
+    if time.time() - _rs_cache["t"] < 600: return _rs_cache["v"]
+    _rs_cache["t"] = time.time(); _rs_cache["v"] = False
+    for base in (os.environ.get("ProgramFiles"), os.environ.get("ProgramW6432")):
+        if not base: continue
+        p = pathlib.Path(base, "Blackmagic Design", "DaVinci Resolve", "Resolve.exe")
+        if p.exists():
+            ver = "?"
+            try:
+                ver = subprocess.run(["powershell", "-NoProfile", "-Command", "(Get-Item -LiteralPath '%s').VersionInfo.ProductVersion" % str(p).replace("'", "")], capture_output=True, text=True, timeout=20).stdout.strip()[:40] or "?"
+            except Exception: pass
+            _rs_cache["v"] = str(p) + " | " + ver; break
+    return _rs_cache["v"]
 
 def gpu_info():
     try:
