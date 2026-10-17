@@ -503,7 +503,7 @@ def snap(i,lb):
         if lon is None or not(b[0]-m<=lon<=b[2]+m and b[1]-m<=lat<=b[3]+m): lon,lat=(b[0]+b[2])/2,(b[1]+b[3])/2
     if lon is None: lon,lat=cams[i][0],cams[i][1]
     return scr(i,lon,lat)
-labpos={}; labpos_xy={}
+labpos={}; labpos_xy={}; labxy={}; nbxy={}
 for i,s in enumerate(sc['scenes']):
     ws=s['vo'].split(); html+=f'<div id="cap{i}" class="cap clip" data-start="0" data-duration="{TOT}" data-track-index="{20+i}">'+' '.join(f'<span id="w{i}_{j}">{w}</span>' for j,w in enumerate(ws))+'</div>\n'
     placed=[]
@@ -512,7 +512,7 @@ for i,s in enumerate(sc['scenes']):
         px,py=snap(i,lb); px=min(900,max(180,px)); py=min(1000,max(260,py))
         _clash = any(abs(py-qy)<110 and abs(px-qx)<420 for (qx,qy) in placed)
         if _clash: print('label dropped: would overlap another label (never shift a label off its pin)',lb.get('text')); continue
-        placed.append((px,py)); labpos[(i,k)]=1; labpos_xy.setdefault(i,[]).append((px,py))
+        placed.append((px,py)); labpos[(i,k)]=1; labxy[(i,k)]=(px,py); labpos_xy.setdefault(i,[]).append((px,py))
         html+=f'<div id="l{i}_{k}" class="lab clip" data-start="0" data-duration="{TOT}" data-track-index="{40+i*2+k}" style="left:{px:.0f}px;top:{py:.0f}px">{lb["text"]}</div>\n'
 NB={}
 def _nbl(i):
@@ -533,7 +533,7 @@ for i,s_ in enumerate(sc['scenes']):
     taken=list(labpos_xy.get(i,[])) if 'labpos_xy' in globals() else []
     for k,(ar_,nm,px,py) in enumerate(_nbl(i)):
         if any(abs(px-qx)<260 and abs(py-qy)<120 for qx,qy in taken): continue
-        taken.append((px,py)); NB[(i,k)]=1
+        taken.append((px,py)); NB[(i,k)]=1; nbxy[(i,k)]=(px,py)
         html+=f'<div id="nb{i}_{k}" class="nb clip" data-start="0" data-duration="{TOT}" data-track-index="{80+i*8+k}" style="left:{px:.0f}px;top:{py:.0f}px">{nm}</div>\n'
 html+='</div><script>\nconst tl=gsap.timeline({paused:true});const ENV='+json.dumps([round(e,2) for e in env])+';const FPS='+str(FPS)+';\n'
 html+=f'const vb={{x:0,y:0,w:{Wm},h:{Hm}}};const set=()=>document.getElementById("map").setAttribute("viewBox",vb.x+" "+vb.y+" "+vb.w+" "+vb.h);\n'
@@ -543,6 +543,17 @@ html+='tl.set("#ch_n,#ch_a,#ch_b",{opacity:1},0);\n'
 for i,s in enumerate(sc['scenes']):
     t0=starts[i];d=auds[i][1]; cx,cy,span=cams[i]; w=span*S; h=w/AR
     html+=f'tl.to(vb,{{x:{X(cx)-w/2:.1f},y:{Y(cy)-h/2+0.1*h:.1f},w:{w:.1f},h:{h:.1f},duration:1.2,ease:"power2.inOut",onUpdate:set}},{max(0,t0-0.2):.2f});\n'
+    # in-scene push-in: slow 8% zoom about the view centre (screen 540,960) so the picture never sits still; labels move with the map so they stay on their pins
+    _pz=0.92; _pt0=t0+1.0; _pd=d+GAP-1.25
+    if _pd>0.8:
+        html+=f'tl.to(vb,{{x:{X(cx)-w/2+w*(1-_pz)/2:.1f},y:{Y(cy)-h/2+0.1*h+h*(1-_pz)/2:.1f},w:{w*_pz:.1f},h:{h*_pz:.1f},duration:{_pd:.2f},ease:"none",onUpdate:set}},{_pt0:.2f});\n'
+        _zz=1/_pz-1
+        for (_ii,_kk),(_lx,_ly) in list(labxy.items())+[((a,b),c_) for (a,b),c_ in nbxy.items() if False]:
+            if _ii!=i: continue
+            html+=f'tl.to("#l{i}_{_kk}",{{x:{(_lx-540)*_zz:.1f},y:{(_ly-960)*_zz:.1f},duration:{_pd:.2f},ease:"none"}},{_pt0:.2f});\n'
+        for (_ii,_kk),(_lx,_ly) in nbxy.items():
+            if _ii!=i: continue
+            html+=f'tl.to("#nb{i}_{_kk}",{{x:{(_lx-540)*_zz:.1f},y:{(_ly-960)*_zz:.1f},duration:{_pd:.2f},ease:"none"}},{_pt0:.2f});\n'
     html+=f'tl.to("#hl{i}",{{opacity:{0.4 if cams[i][2]<12 else 1},duration:.4}},{t0:.2f}).to("#hl{i}",{{opacity:0,duration:.25}},{t0+d+GAP-.1:.2f});\n'
     if cams[i][2]<12 or (cams[i][2]<70 and not _hasl(i)): html+=f'tl.to("#pin{i}",{{attr:{{r:{max(cams[i][2]*S*(0.03 if cams[i][2]<12 else 0.012),18):.1f}}},duration:.4}},{t0+.3:.2f}).to("#pin{i}",{{attr:{{r:0}},duration:.2}},{t0+d+GAP-.1:.2f});\n'
     for k in range(len(GEOS[i])):
